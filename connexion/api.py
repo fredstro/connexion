@@ -249,7 +249,7 @@ class Api(object):
         return blueprint
 
     def swagger_ui_index(self):
-        return flask.render_template('index.html', api_url=self.base_url)
+        return flask.render_template('swagger-ui-index.html',api_url=self.base_url)
 
     def swagger_ui_static(self, filename):
         """
