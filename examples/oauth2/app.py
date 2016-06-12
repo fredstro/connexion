@@ -7,7 +7,7 @@ import connexion
 import flask
 
 
-def get_secret() -> str:
+def get_secret(): # -> str:
     # the token's uid will be set in request.user
     return 'You are: {uid}'.format(uid=flask.request.user)
 

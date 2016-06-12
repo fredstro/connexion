@@ -10,7 +10,7 @@ TOKENS = {'123': 'jdoe',
           '456': 'rms'}
 
 
-def get_tokeninfo(access_token: str) -> dict:
+def get_tokeninfo(access_token): #: str): # -> dict:
     uid = TOKENS.get(access_token)
     if not uid:
         return 'No such token', 401
