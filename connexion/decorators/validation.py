@@ -222,8 +222,11 @@ class ParameterValidator(object):
         """
         :type function: types.FunctionType
         :rtype: types.FunctionType
-        """
 
+        COMMENT: I changed error codes from 400 to 422
+        """
+        http_code = 422
+        error_message = 'Validation Error'
         @functools.wraps(function)
         def wrapper(*args, **kwargs):
             logger.debug("%s validating parameters...", flask.request.url)
@@ -231,22 +234,22 @@ class ParameterValidator(object):
             for param in self.parameters.get('query', []):
                 error = self.validate_query_parameter(param)
                 if error:
-                    return problem(400, 'Bad Request', error)
+                    return problem(http_code, error_message, error)
 
             for param in self.parameters.get('path', []):
                 error = self.validate_path_parameter(kwargs, param)
                 if error:
-                    return problem(400, 'Bad Request', error)
+                    return problem(http_code, error_message, error)
 
             for param in self.parameters.get('header', []):
                 error = self.validate_header_parameter(param)
                 if error:
-                    return problem(400, 'Bad Request', error)
+                    return problem(http_code, error_message, error)
 
             for param in self.parameters.get('formData', []):
                 error = self.validate_formdata_parameter(param)
                 if error:
-                    return problem(400, 'Bad Request', error)
+                    return problem(http_codexbcm, error_message, error)
 
             response = function(*args, **kwargs)
             return response
