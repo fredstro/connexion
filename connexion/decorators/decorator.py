@@ -34,6 +34,7 @@ class BaseDecorator(object):
         """
         url = flask.request.url
         logger.debug('Getting data and status code', extra={'data': data, 'data_type': type(data), 'url': url})
+        #logger.debug("data={0}".format(data))
         status_code, headers = 200, {}
         if is_flask_response(data):
             data = data

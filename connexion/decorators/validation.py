@@ -147,6 +147,7 @@ class ResponseBodyValidator(object):
         :type schema: dict
         :rtype: flask.Response | None
         """
+        #print "data=",data
         try:
             validate(data, self.schema, format_checker=draft4_format_checker)
         except ValidationError as exception:
