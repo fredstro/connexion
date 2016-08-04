@@ -41,11 +41,13 @@ def oauth_requests(monkeypatch):
         params = params or {}
         if url == "https://ouath.example/token_info":
             token = params['access_token']
-            if token == "100":
+            if token in ["100", "has_myscope"]:
                 return FakeResponse(200, '{"uid": "test-user", "scope": ["myscope"]}')
-            if token == "200":
+            if token in ["200", "has_wrongscope"]:
                 return FakeResponse(200, '{"uid": "test-user", "scope": ["wrongscope"]}')
-            if token == "300":
+            if token == "has_myscope_otherscope":
+                return FakeResponse(200, '{"uid": "test-user", "scope": ["myscope", "otherscope"]}')
+            if token in ["300", "is_not_invalid"]:
                 return FakeResponse(404, '')
         return url
 
@@ -79,30 +81,35 @@ def default_param_error_spec_dir():
     return FIXTURES_FOLDER / 'default_param_error'
 
 
-def build_app_from_fixture(api_spec_folder):
+def build_app_from_fixture(api_spec_folder, **kwargs):
     app = App(__name__, 5001, FIXTURES_FOLDER / api_spec_folder, debug=True)
-    app.add_api('swagger.yaml', validate_responses=True)
+    app.add_api('swagger.yaml', **kwargs)
     return app
 
 
 @pytest.fixture(scope="session")
 def simple_app():
-    return build_app_from_fixture('simple')
+    return build_app_from_fixture('simple', validate_responses=True)
+
+
+@pytest.fixture(scope="session")
+def strict_app():
+    return build_app_from_fixture('simple', validate_responses=True, strict_validation=True)
 
 
 @pytest.fixture(scope="session")
 def problem_app():
-    return build_app_from_fixture('problem')
+    return build_app_from_fixture('problem', validate_responses=True)
 
 
 @pytest.fixture(scope="session")
 def schema_app():
-    return build_app_from_fixture('different_schemas')
+    return build_app_from_fixture('different_schemas', validate_responses=True)
 
 
 @pytest.fixture(scope="session")
 def secure_endpoint_app():
-    return build_app_from_fixture('secure_endpoint')
+    return build_app_from_fixture('secure_endpoint', validate_responses=True)
 
 
 @pytest.fixture(scope="session")
