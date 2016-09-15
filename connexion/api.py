@@ -24,12 +24,15 @@ import yaml
 from swagger_spec_validator.validator20 import validate_spec
 
 from . import resolver, utils
+from .exceptions import ResolverError
 from .handlers import AuthErrorHandler
 from .operation import Operation
 
 MODULE_PATH = pathlib.Path(__file__).absolute().parent
 SWAGGER_UI_PATH = MODULE_PATH / 'vendor' / 'swagger-ui'
 SWAGGER_UI_URL = 'ui'
+
+RESOLVER_ERROR_ENDPOINT_RANDOM_DIGITS = 6
 
 logger = logging.getLogger('connexion.api')
 
@@ -63,7 +66,7 @@ class Api(object):
     def __init__(self, swagger_yaml_path, base_url=None, arguments=None,
                  swagger_json=None, swagger_ui=None, swagger_path=None, swagger_url=None,
                  validate_responses=False, strict_validation=False, resolver=resolver.Resolver(),
-                 auth_all_paths=False, debug=False):
+                 auth_all_paths=False, debug=False, resolver_error_handler=None):
         """
         :type swagger_yaml_path: pathlib.Path
         :type base_url: str | None
@@ -77,8 +80,12 @@ class Api(object):
         :type auth_all_paths: bool
         :type debug: bool
         :param resolver: Callable that maps operationID to a function
+        :param resolver_error_handler: If given, a callable that generates an
+            Operation used for handling ResolveErrors
+        :type resolver_error_handler: callable | None
         """
         self.debug = debug
+        self.resolver_error_handler = resolver_error_handler
         self.swagger_yaml_path = pathlib.Path(swagger_yaml_path)
         logger.debug('Loading specification: %s', swagger_yaml_path,
                      extra={'swagger_yaml': swagger_yaml_path,
@@ -180,6 +187,28 @@ class Api(object):
                               validate_responses=self.validate_responses,
                               strict_validation=self.strict_validation,
                               resolver=self.resolver)
+        self._add_operation_internal(method, path, operation)
+
+    def _add_resolver_error_handler(self, method, path, err):
+        """
+        Adds a handler for ResolverError for the given method and path.
+        """
+        operation = self.resolver_error_handler(err,
+                                                method=method,
+                                                path=path,
+                                                app_produces=self.produces,
+                                                app_security=self.security,
+                                                security_definitions=self.security_definitions,
+                                                definitions=self.definitions,
+                                                parameter_definitions=self.parameter_definitions,
+                                                response_definitions=self.response_definitions,
+                                                validate_responses=self.validate_responses,
+                                                strict_validation=self.strict_validation,
+                                                resolver=self.resolver,
+                                                randomize_endpoint=RESOLVER_ERROR_ENDPOINT_RANDOM_DIGITS)
+        self._add_operation_internal(method, path, operation)
+
+    def _add_operation_internal(self, method, path, operation):
         operation_id = operation.operation_id
         logger.debug('... Adding %s -> %s', method.upper(), operation_id,
                      extra=vars(operation))
@@ -201,23 +230,36 @@ class Api(object):
             # http://swagger.io/specification/#pathItemObject
             path_parameters = methods.get('parameters', [])
 
-            # TODO Error handling
             for method, endpoint in methods.items():
                 if method == 'parameters':
                     continue
                 try:
                     self.add_operation(method, path, endpoint, path_parameters)
-                except Exception:  # pylint: disable= W0703
-                    url = '{base_url}{path}'.format(base_url=self.base_url,
-                                                    path=path)
-                    error_msg = 'Failed to add operation for {method} {url}'.format(
-                        method=method.upper(),
-                        url=url)
-                    if self.debug:
-                        logger.exception(error_msg)
+                except ResolverError as err:
+                    # If we have an error handler for resolver errors, add it
+                    # as an operation (but randomize the flask endpoint name).
+                    # Otherwise treat it as any other error.
+                    if self.resolver_error_handler is not None:
+                        self._add_resolver_error_handler(method, path, err)
                     else:
-                        logger.error(error_msg)
-                        six.reraise(*sys.exc_info())
+                        exc_info = err.exc_info
+                        if exc_info is None:
+                            exc_info = sys.exc_info()
+                        self._handle_add_operation_error(path, method, exc_info)
+                except Exception:
+                    # All other relevant exceptions should be handled as well.
+                    self._handle_add_operation_error(path, method, sys.exc_info())
+
+    def _handle_add_operation_error(self, path, method, exc_info):
+        url = '{base_url}{path}'.format(base_url=self.base_url, path=path)
+        error_msg = 'Failed to add operation for {method} {url}'.format(
+            method=method.upper(),
+            url=url)
+        if self.debug:
+            logger.exception(error_msg)
+        else:
+            logger.error(error_msg)
+            six.reraise(*exc_info)
 
     def add_auth_on_not_found(self):
         """

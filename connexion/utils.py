@@ -13,10 +13,13 @@ Unless required by applicable law or agreed to in writing, software distributed 
 
 import functools
 import importlib
+import random
 import re
+import string
 
 import flask
 import werkzeug.wrappers
+
 
 PATH_PARAMETER = re.compile(r'\{([^}]*)\}')
 
@@ -28,14 +31,24 @@ PATH_PARAMETER_CONVERTERS = {
 }
 
 
-def flaskify_endpoint(identifier):
+def flaskify_endpoint(identifier, randomize=None):
     """
     Converts the provided identifier in a valid flask endpoint name
 
     :type identifier: str
+    :param randomize: If specified, add this many random characters (upper case
+        and digits) to the endpoint name, separated by a pipe character.
+    :type randomize: int | None
     :rtype: str
     """
-    return identifier.replace('.', '_')
+    result = identifier.replace('.', '_')
+    if randomize is None:
+        return result
+
+    chars = string.ascii_uppercase + string.digits
+    return "{result}|{random_string}".format(
+        result=result,
+        random_string=''.join(random.SystemRandom().choice(chars) for _ in range(randomize)))
 
 
 def convert_path_parameter(match, types):
@@ -107,8 +120,11 @@ def get_function_from_name(function_name):
             module = importlib.import_module(module_name)
         except ImportError as import_error:
             last_import_error = import_error
-            module_name, attr_path1 = module_name.rsplit('.', 1)
-            attr_path = '{0}.{1}'.format(attr_path1, attr_path)
+            if '.' in module_name:
+                module_name, attr_path1 = module_name.rsplit('.', 1)
+                attr_path = '{0}.{1}'.format(attr_path1, attr_path)
+            else:
+                raise
     try:
         function = deep_getattr(module, attr_path)
     except AttributeError:

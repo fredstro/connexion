@@ -82,7 +82,11 @@ def default_param_error_spec_dir():
 
 
 def build_app_from_fixture(api_spec_folder, **kwargs):
-    app = App(__name__, 5001, FIXTURES_FOLDER / api_spec_folder, debug=True)
+    debug = True
+    if 'debug' in kwargs:
+        debug = kwargs['debug']
+        del(kwargs['debug'])
+    app = App(__name__, 5001, FIXTURES_FOLDER / api_spec_folder, debug=debug)
     app.add_api('swagger.yaml', **kwargs)
     return app
 
@@ -120,3 +124,8 @@ def secure_api_app():
 @pytest.fixture(scope="session")
 def unordered_definition_app():
     return build_app_from_fixture('unordered_definition')
+
+
+@pytest.fixture(scope="session")
+def bad_operations_app():
+    return build_app_from_fixture('bad_operations', resolver_error=501)

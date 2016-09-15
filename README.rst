@@ -110,7 +110,7 @@ path of your application (e.g ``swagger/``). Then run:
 See the `Connexion Pet Store Example Application`_ for a sample
 specification.
 
-Now you’re able run and use Connexion!
+Now you're able run and use Connexion!
 
 
 OAuth 2 Authentication and Authorization
@@ -171,7 +171,7 @@ Automatic Routing
 -----------------
 
 To customize this behavior, Connexion can use alternative
-``Resolvers``—for example, ``RestyResolver``. The ``RestyResolver``
+``Resolvers``--for example, ``RestyResolver``. The ``RestyResolver``
 will compose an ``operationId`` based on the path and HTTP method of
 the endpoints in your specification:
 
@@ -349,7 +349,7 @@ One way, `described by Flask`_, looks like this:
            debug=False/True, ssl_context=context)
 
 However, Connexion doesn't provide an ssl_context parameter. This is
-because Flask doesn't, either—but it uses `**kwargs` to send the
+because Flask doesn't, either--but it uses `**kwargs` to send the
 parameters to the underlying [werkzeug](http://werkzeug.pocoo.org/) server.
 
 The Swagger UI Console
@@ -393,7 +393,7 @@ Flask with uWSGI`_ (this is common):
 
 .. code-block:: python
 
-    app = connexion.App(specification_dir='swagger/')
+    app = connexion.App(__name__, specification_dir='swagger/')
     application = app.app # expose global WSGI application object
 
 Set up and run the installation code:

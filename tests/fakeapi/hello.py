@@ -345,3 +345,7 @@ def unordered_params_response(first, path_param, second):
 
 def more_than_one_scope_defined():
     return "OK"
+
+
+def test_args_kwargs(*args, **kwargs):
+    return kwargs
