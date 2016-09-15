@@ -85,7 +85,7 @@
         if(key && key.trim() != "") {
 //            var apiKeyAuth = new SwaggerClient.ApiKeyAuthorization("api_key", key, "query");
 //            window.swaggerUi.api.clientAuthorizations.add("api_key", apiKeyAuth);
-              var apiKeyAuth = new SwaggerClient.ApiKeyAuthorization("Authorization", "JWT " + key, "header" );
+              var apiKeyAuth = new SwaggerClient.ApiKeyAuthorization("Authorization", "Bearer " + key, "header" );
               window.swaggerUi.api.clientAuthorizations.add( "jwt", apiKeyAuth );
 
             log("added key " + key);
