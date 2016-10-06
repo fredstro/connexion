@@ -139,7 +139,7 @@ class RequestBodyValidator(object):
         except ValidationError as exception:
             logger.error("{url} validation error: {error}".format(url=flask.request.url,
                                                                   error=exception.message))
-            return problem(400, 'Bad Request', str(exception.message))
+            return problem(422, 'Validation Error', str(exception.message))
 
         return None
 
@@ -286,7 +286,7 @@ class ParameterValidator(object):
             for param in self.parameters.get('formData', []):
                 error = self.validate_formdata_parameter(param)
                 if error:
-                    return problem(http_codexbcm, error_message, error)
+                    return problem(http_code, error_message, error)
 
             response = function(*args, **kwargs)
             return response
