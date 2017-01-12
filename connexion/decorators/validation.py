@@ -137,7 +137,7 @@ class RequestBodyValidator(object):
         try:
             validate(data, self.schema, format_checker=draft4_format_checker)
         except ValidationError as exception:
-            logger.error("{url} validation error: {error}".format(url=flask.request.url,
+            logger.debug("{url} validation error: {error}".format(url=flask.request.url,
                                                                   error=exception.message))
             return problem(422, 'Validation Error', str(exception.message))
 
@@ -162,10 +162,10 @@ class ResponseBodyValidator(object):
         try:
             validate(data, self.schema, format_checker=draft4_format_checker)
         except ValidationError as exception:
-            logger.error("{url} validation error: {error}".format(url=flask.request.url,
-                                                                  error=exception))
+            logger.error("{url} validation error: {error} INFO:{info}".format(url=flask.request.url,
+                                                                  error=exception,
+                                                                  info=sys.exc_info()))
             six.reraise(*sys.exc_info())
-
         return None
 
 
@@ -204,7 +204,7 @@ class ParameterValidator(object):
                 else:
                     validate(converted_value, param, format_checker=draft4_format_checker)
             except ValidationError as exception:
-                print(converted_value, type(converted_value), param.get('type'), param, '<--------------------------')
+                #print(converted_value, type(converted_value), param.get('type'), param, '<--------------------------')
                 return str(exception)
 
         elif param.get('required'):
