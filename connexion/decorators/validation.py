@@ -127,9 +127,9 @@ class RequestBodyValidator(object):
         try:
             self.validator.validate(data)
         except ValidationError as exception:
-            logger.error("{url} validation error: {error}".format(url=flask.request.url,
+            logger.debug("{url} validation error: {error}".format(url=flask.request.url,
                                                                   error=exception.message))
-            return problem(400, 'Bad Request', str(exception.message))
+            return problem(422, 'Validation Error', str(exception.message))
 
         return None
 
@@ -153,8 +153,9 @@ class ResponseBodyValidator(object):
         try:
             self.validator.validate(data)
         except ValidationError as exception:
-            logger.error("{url} validation error: {error}".format(url=flask.request.url,
-                                                                  error=exception))
+            logger.error("{url} validation error: {error} INFO:{info}".format(url=flask.request.url,
+                                                                  error=exception,
+                                                                  info=sys.exc_info()))
             six.reraise(*sys.exc_info())
 
         return None
@@ -250,8 +251,11 @@ class ParameterValidator(object):
         """
         :type function: types.FunctionType
         :rtype: types.FunctionType
-        """
 
+        COMMENT: I changed error codes from 400 to 422
+        """
+        http_code = 422
+        error_message = 'Validation Error'
         @functools.wraps(function)
         def wrapper(*args, **kwargs):
             logger.debug("%s validating parameters...", flask.request.url)
@@ -266,22 +270,22 @@ class ParameterValidator(object):
             for param in self.parameters.get('query', []):
                 error = self.validate_query_parameter(param)
                 if error:
-                    return problem(400, 'Bad Request', error)
+                    return problem(http_code, error_message, error)
 
             for param in self.parameters.get('path', []):
                 error = self.validate_path_parameter(kwargs, param)
                 if error:
-                    return problem(400, 'Bad Request', error)
+                    return problem(http_code, error_message, error)
 
             for param in self.parameters.get('header', []):
                 error = self.validate_header_parameter(param)
                 if error:
-                    return problem(400, 'Bad Request', error)
+                    return problem(http_code, error_message, error)
 
             for param in self.parameters.get('formData', []):
                 error = self.validate_formdata_parameter(param)
                 if error:
-                    return problem(400, 'Bad Request', error)
+                    return problem(http_code, error_message, error)
 
             return function(*args, **kwargs)
 
