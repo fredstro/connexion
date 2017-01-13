@@ -148,9 +148,11 @@ class ResponseContainer(object):
 
         self._response = response
         self.is_handler_response_object = bool(response)
-
         if self._response:
-            self.data = self._response.get_data()
+            if not self._response.direct_passthrough:
+                self.data = self._response.get_data()
+            else:
+                self.data = self._response.response
             self.status_code = self._response.status_code
             self.headers = self._response.headers
 
