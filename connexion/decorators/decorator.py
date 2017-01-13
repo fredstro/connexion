@@ -148,6 +148,7 @@ class ResponseContainer(object):
 
         self._response = response
         self.is_handler_response_object = bool(response)
+
         if self._response:
             if not self._response.direct_passthrough:
                 self.data = self._response.get_data()

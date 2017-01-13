@@ -100,7 +100,7 @@ def get_function_from_name(function_name):
     module_name, attr_path = function_name.rsplit('.', 1)
     module = None
     last_import_error = None
-    #print "name=",function_name
+
     while not module:
 
         try:
