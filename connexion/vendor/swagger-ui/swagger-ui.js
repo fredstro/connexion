@@ -3306,7 +3306,7 @@ ApiKeyAuthorization.prototype.apply = function (obj) {
     return true;
   } else if (this.type === 'header') {
     if(typeof obj.headers[this.name] === 'undefined') {
-      obj.headers[this.name] = this.value;
+      obj.headers[this.name] = "Bearer " + this.value;
     }
 
     return true;
