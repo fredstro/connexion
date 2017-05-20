@@ -84,14 +84,19 @@ class ResponseValidator(BaseDecorator):
         def wrapper(request):
             response = function(request)
             try:
+                if not response.direct_passthrough:
+                    data = response.get_data()
+                else:
+                    data = response.response
                 self.validate_response(
-                    response.get_data(), response.status_code,
+                    data, response.status_code,
                     response.headers, request.url)
 
             except (NonConformingResponseBody, NonConformingResponseHeaders) as e:
                 response = problem(500, e.reason, e.message)
                 return self.operation.api.get_response(response)
-
+            except Exception as e:
+                raise e
             return response
 
         return wrapper
