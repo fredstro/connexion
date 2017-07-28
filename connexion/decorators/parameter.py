@@ -48,8 +48,11 @@ def inspect_function_arguments(function):  # pragma: no cover
 
 def make_type(value, type):
     type_func = TYPE_MAP[type]  # convert value to right type
-    return type_func(value)
-
+    try:
+        return type_func(value)
+    except UnicodeEncodeError:
+        return unicode(value) 
+    
 
 def get_val_from_param(value, query_param):
     if is_nullable(query_param) and is_null(value):
