@@ -1,23 +1,28 @@
-import copy
 import functools
 import inspect
 import logging
+import re
 
-import flask
+import inflection
 import six
-import werkzeug.exceptions as exceptions
 
-from ..utils import boolean, is_null, is_nullable
+from ..http_facts import FORM_CONTENT_TYPES
+from ..lifecycle import ConnexionRequest  # NOQA
+from ..utils import all_json
+
+try:
+    import builtins
+except ImportError:  # pragma: no cover
+    import __builtin__ as builtins
+
 
 logger = logging.getLogger(__name__)
 
-# https://github.com/swagger-api/swagger-spec/blob/master/versions/2.0.md#data-types
-TYPE_MAP = {'integer': int,
-            'number': float,
-            'string': str,
-            'boolean': boolean,
-            'array': list,
-            'object': dict}  # map of swagger types to python types
+# Python 2/3 compatibility:
+try:
+    py_string = unicode
+except NameError:  # pragma: no cover
+    py_string = str  # pragma: no cover
 
 
 def inspect_function_arguments(function):  # pragma: no cover
@@ -39,115 +44,85 @@ def inspect_function_arguments(function):  # pragma: no cover
         return argspec.args, bool(argspec.keywords)
 
 
-def make_type(value, type):
-    type_func = TYPE_MAP[type]  # convert value to right type
-    return type_func(value)
+def snake_and_shadow(name):
+    """
+    Converts the given name into Pythonic form. Firstly it converts CamelCase names to snake_case. Secondly it looks to
+    see if the name matches a known built-in and if it does it appends an underscore to the name.
+    :param name: The parameter name
+    :type name: str
+    :return:
+    """
+    snake = inflection.underscore(name)
+    if snake in builtins.__dict__.keys():
+        return "{}_".format(snake)
+    return snake
 
 
-def get_val_from_param(value, query_param):
-    if is_nullable(query_param) and is_null(value):
-        return None
-
-    if query_param["type"] == "array":  # then logic is more complex
-        if query_param.get("collectionFormat") and query_param.get("collectionFormat") == "pipes":
-            parts = value.split("|")
-        else:  # default: csv
-            parts = value.split(",")
-        return [make_type(part, query_param["items"]["type"]) for part in parts]
-    else:
-        return make_type(value, query_param["type"])
-
-
-def parameter_to_arg(parameters, function):
+def parameter_to_arg(operation, function, pythonic_params=False,
+                     pass_context_arg_name=None):
     """
     Pass query and body parameters as keyword arguments to handler function.
 
     See (https://github.com/zalando/connexion/issues/59)
-    :param parameters: All the parameters of the handler functions
-    :type parameters: dict|None
-    :param function: The handler function for the REST endpoint.
-    :type function: function|None
+    :param operation: The operation being called
+    :type operation: connexion.operations.AbstractOperation
+    :param pythonic_params: When True CamelCase parameters are converted to snake_case and an underscore is appended to
+    any shadowed built-ins
+    :type pythonic_params: bool
+    :param pass_context_arg_name: If not None URL and function has an argument matching this name, the framework's
+    request context will be passed as that argument.
+    :type pass_context_arg_name: str|None
     """
-    body_parameters = [parameter for parameter in parameters if parameter['in'] == 'body'] or [{}]
-    body_name = body_parameters[0].get('name')
-    default_body = body_parameters[0].get('schema', {}).get('default')
-    query_types = {parameter['name']: parameter
-                   for parameter in parameters if parameter['in'] == 'query'}  # type: dict[str, str]
-    form_types = {parameter['name']: parameter
-                  for parameter in parameters if parameter['in'] == 'formData'}
-    path_types = {parameter['name']: parameter
-                  for parameter in parameters if parameter['in'] == 'path'}
+    consumes = operation.consumes
+
+    def sanitized(name):
+        return name and re.sub('^[^a-zA-Z_]+', '', re.sub('[^0-9a-zA-Z_]', '', name))
+
+    def pythonic(name):
+        name = name and snake_and_shadow(name)
+        return sanitized(name)
+
+    sanitize = pythonic if pythonic_params else sanitized
     arguments, has_kwargs = inspect_function_arguments(function)
-    default_query_params = {param['name']: param['default']
-                            for param in parameters if param['in'] == 'query' and 'default' in param}
-    default_form_params = {param['name']: param['default']
-                           for param in parameters if param['in'] == 'formData' and 'default' in param}
 
     @functools.wraps(function)
-    def wrapper(*args, **kwargs):
+    def wrapper(request):
+        # type: (ConnexionRequest) -> Any
         logger.debug('Function Arguments: %s', arguments)
+        kwargs = {}
+
+        if all_json(consumes):
+            request_body = request.json
+        elif consumes[0] in FORM_CONTENT_TYPES:
+            request_body = {sanitize(k): v for k, v in request.form.items()}
+        else:
+            request_body = request.body
 
         try:
-            request_body = flask.request.json
-        except exceptions.BadRequest:
-            request_body = None
+            query = request.query.to_dict(flat=False)
+        except AttributeError:
+            query = dict(request.query.items())
 
-        if default_body and not request_body:
-            request_body = default_body
+        kwargs.update(
+            operation.get_arguments(request.path_params, query, request_body,
+                                    request.files, arguments, has_kwargs, sanitize)
+        )
 
-        # Parse path parameters
-        for key, path_param_definitions in path_types.items():
-            if key in kwargs:
-                kwargs[key] = get_val_from_param(kwargs[key],
-                                                 path_param_definitions)
+        # optionally convert parameter variable names to un-shadowed, snake_case form
+        if pythonic_params:
+            kwargs = {snake_and_shadow(k): v for k, v in kwargs.items()}
 
-        # Add body parameters
-        if not has_kwargs and body_name not in arguments:
-            logger.debug("Body parameter '%s' not in function arguments", body_name)
-        elif body_name:
-            logger.debug("Body parameter '%s' in function arguments", body_name)
-            kwargs[body_name] = request_body
-
-        # Add query parameters
-        query_arguments = copy.deepcopy(default_query_params)
-        query_arguments.update(flask.request.args.items())
-        for key, value in query_arguments.items():
-            if not has_kwargs and key not in arguments:
-                logger.debug("Query Parameter '%s' not in function arguments", key)
-            else:
-                logger.debug("Query Parameter '%s' in function arguments", key)
-                try:
-                    query_param = query_types[key]
-                except KeyError:  # pragma: no cover
-                    logger.error("Function argument '{}' not defined in specification".format(key))
-                else:
-                    logger.debug('%s is a %s', key, query_param)
-                    kwargs[key] = get_val_from_param(value, query_param)
-
-        # Add formData parameters
-        form_arguments = copy.deepcopy(default_form_params)
-        form_arguments.update(flask.request.form.items())
-        for key, value in form_arguments.items():
-            if not has_kwargs and key not in arguments:
-                logger.debug("FormData parameter '%s' not in function arguments", key)
-            else:
-                logger.debug("FormData parameter '%s' in function arguments", key)
-                try:
-                    form_param = form_types[key]
-                except KeyError:  # pragma: no cover
-                    logger.error("Function argument '{}' not defined in specification".format(key))
-                else:
-                    kwargs[key] = get_val_from_param(value, form_param)
-
-        # Add file parameters
-        file_arguments = flask.request.files
-        for key, value in file_arguments.items():
-            if not has_kwargs and key not in arguments:
-                logger.debug("File parameter (formData) '%s' not in function arguments", key)
-            else:
-                logger.debug("File parameter (formData) '%s' in function arguments", key)
+        # add context info (e.g. from security decorator)
+        for key, value in request.context.items():
+            if has_kwargs or key in arguments:
                 kwargs[key] = value
+            else:
+                logger.debug("Context parameter '%s' not in function arguments", key)
 
-        return function(*args, **kwargs)
+        # attempt to provide the request context to the function
+        if pass_context_arg_name and (has_kwargs or pass_context_arg_name in arguments):
+            kwargs[pass_context_arg_name] = request.context
+
+        return function(**kwargs)
 
     return wrapper

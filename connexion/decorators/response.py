@@ -1,27 +1,13 @@
-"""
-Copyright 2015 Zalando SE
-
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the
-License. You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
-"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
- language governing permissions and limitations under the License.
-"""
-
 # Decorators to change the return type of endpoints
 import functools
 import logging
 
-from flask import json
 from jsonschema import ValidationError
 
 from ..exceptions import (NonConformingResponseBody,
                           NonConformingResponseHeaders)
 from ..problem import problem
-from ..utils import produces_json
+from ..utils import all_json, has_coroutine
 from .decorator import BaseDecorator
 from .validation import ResponseBodyValidator
 
@@ -29,15 +15,19 @@ logger = logging.getLogger('connexion.decorators.response')
 
 
 class ResponseValidator(BaseDecorator):
-    def __init__(self, operation,  mimetype):
+    def __init__(self, operation, mimetype, validator=None):
         """
         :type operation: Operation
         :type mimetype: str
+        :param validator: Validator class that should be used to validate passed data
+                          against API schema. Default is jsonschema.Draft4Validator.
+        :type validator: jsonschema.IValidator
         """
         self.operation = operation
         self.mimetype = mimetype
+        self.validator = validator
 
-    def validate_response(self, data, status_code, headers):
+    def validate_response(self, data, status_code, headers, url):
         """
         Validates the Response object based on what has been declared in the specification.
         Ensures the response body matches the declated schema.
@@ -46,21 +36,18 @@ class ResponseValidator(BaseDecorator):
         :type headers: dict
         :rtype bool | None
         """
-        response_definitions = self.operation.operation["responses"]
-        response_definition = response_definitions.get(str(status_code), {})
-        response_definition = self.operation.resolve_reference(response_definition)
-        # TODO handle default response definitions
+        # check against returned header, fall back to expected mimetype
+        content_type = headers.get("Content-Type", self.mimetype)
+        content_type = content_type.rsplit(";", 1)[0]  # remove things like utf8 metadata
 
-        if self.is_json_schema_compatible(response_definition):
-            schema = response_definition.get("schema")
-            v = ResponseBodyValidator(schema)
+        response_definition = self.operation.response_definition(str(status_code), content_type)
+        response_schema = self.operation.response_schema(str(status_code), content_type)
+
+        if self.is_json_schema_compatible(response_schema):
+            v = ResponseBodyValidator(response_schema, validator=self.validator)
             try:
-                # For cases of custom encoders, we need to encode and decode to
-                # transform to the actual types that are going to be returned.
-                data = json.dumps(data)
-                data = json.loads(data)
-
-                v.validate_schema(data)
+                data = self.operation.json_loads(data)
+                v.validate_schema(data, url)
             except ValidationError as e:
                 raise NonConformingResponseBody(message=str(e))
 
@@ -76,7 +63,7 @@ class ResponseValidator(BaseDecorator):
                 raise NonConformingResponseHeaders(message=msg)
         return True
 
-    def is_json_schema_compatible(self, response_definition):
+    def is_json_schema_compatible(self, response_schema):
         """
         Verify if the specified operation responses are JSON schema
         compatible.
@@ -85,30 +72,42 @@ class ResponseValidator(BaseDecorator):
         type "application/json" or "text/plain" can be validated using
         json_schema package.
 
-        :type response_definition: dict
+        :type response_schema: dict
         :rtype bool
         """
-        if not response_definition:
+        if not response_schema:
             return False
-        return ('schema' in response_definition and
-                (produces_json([self.mimetype]) or self.mimetype == 'text/plain'))
+        return all_json([self.mimetype]) or self.mimetype == 'text/plain'
 
     def __call__(self, function):
         """
         :type function: types.FunctionType
         :rtype: types.FunctionType
         """
-        @functools.wraps(function)
-        def wrapper(*args, **kwargs):
-            result = function(*args, **kwargs)
+
+        def _wrapper(request, response):
             try:
-                data, status_code, headers = self.get_full_response(result)
-                self.validate_response(data, status_code, headers)
-            except NonConformingResponseBody as e:
-                return problem(500, e.reason, e.message)
-            except NonConformingResponseHeaders as e:
-                return problem(500, e.reason, e.message)
-            return result
+                connexion_response = \
+                    self.operation.api.get_connexion_response(response, self.mimetype)
+                self.validate_response(
+                    connexion_response.body, connexion_response.status_code,
+                    connexion_response.headers, request.url)
+
+            except (NonConformingResponseBody, NonConformingResponseHeaders) as e:
+                response = problem(500, e.reason, e.message)
+                return self.operation.api.get_response(response)
+
+            return response
+
+        if has_coroutine(function):  # pragma: 2.7 no cover
+            from .coroutine_wrappers import get_response_validator_wrapper
+            wrapper = get_response_validator_wrapper(function, _wrapper)
+
+        else:  # pragma: 3 no cover
+            @functools.wraps(function)
+            def wrapper(request):
+                response = function(request)
+                return _wrapper(request, response)
 
         return wrapper
 
@@ -116,4 +115,4 @@ class ResponseValidator(BaseDecorator):
         """
         :rtype: str
         """
-        return '<ResponseValidator>'
+        return '<ResponseValidator>'  # pragma: no cover

@@ -1,98 +1,50 @@
-"""
-Copyright 2015 Zalando SE
-
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the
-License. You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
-"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
- language governing permissions and limitations under the License.
-"""
-
 import functools
 import importlib
-import random
-import re
-import string
 
-import flask
-import werkzeug.wrappers
+import six
+import yaml
 
-
-PATH_PARAMETER = re.compile(r'\{([^}]*)\}')
-
-# map Swagger type to flask path converter
-# see http://flask.pocoo.org/docs/0.10/api/#url-route-registrations
-PATH_PARAMETER_CONVERTERS = {
-    'integer': 'int',
-    'number': 'float'
-}
+# Python 2/3 compatibility:
+try:
+    py_string = unicode
+except NameError:  # pragma: no cover
+    py_string = str  # pragma: no cover
 
 
-def flaskify_endpoint(identifier, randomize=None):
-    """
-    Converts the provided identifier in a valid flask endpoint name
+def boolean(s):
+    '''
+    Convert JSON/Swagger boolean value to Python, raise ValueError otherwise
 
-    :type identifier: str
-    :param randomize: If specified, add this many random characters (upper case
-        and digits) to the endpoint name, separated by a pipe character.
-    :type randomize: int | None
-    :rtype: str
-    """
-    result = identifier.replace('.', '_')
-    if randomize is None:
-        return result
-
-    chars = string.ascii_uppercase + string.digits
-    return "{result}|{random_string}".format(
-        result=result,
-        random_string=''.join(random.SystemRandom().choice(chars) for _ in range(randomize)))
-
-
-def convert_path_parameter(match, types):
-    name = match.group(1)
-    swagger_type = types.get(name)
-    converter = PATH_PARAMETER_CONVERTERS.get(swagger_type)
-    return '<{0}{1}{2}>'.format(converter or '',
-                                ':' if converter else '',
-                                name.replace('-', '_'))
-
-
-def flaskify_path(swagger_path, types=None):
-    """
-    Convert swagger path templates to flask path templates
-
-    :type swagger_path: str
-    :type types: dict
-    :rtype: str
-
-    >>> flaskify_path('/foo-bar/{my-param}')
-    '/foo-bar/<my_param>'
-
-    >>> flaskify_path('/foo/{someint}', {'someint': 'int'})
-    '/foo/<int:someint>'
-    """
-    if types is None:
-        types = {}
-    convert_match = functools.partial(convert_path_parameter, types=types)
-    return PATH_PARAMETER.sub(convert_match, swagger_path)
-
-
-def is_flask_response(obj):
-    """
-    Verifies if obj is a default Flask response instance.
-
-    :type obj: object
-    :rtype bool
-
-    >>> is_flask_response(redirect('http://example.com/'))
+    >>> boolean('true')
     True
-    >>> is_flask_response(flask.Response())
-    True
-    """
-    return isinstance(obj, flask.Response) or isinstance(obj, werkzeug.wrappers.Response)
+
+    >>> boolean('false')
+    False
+    '''
+    if isinstance(s, bool):
+        return s
+    elif not hasattr(s, 'lower'):
+        raise ValueError('Invalid boolean value')
+    elif s.lower() == 'true':
+        return True
+    elif s.lower() == 'false':
+        return False
+    else:
+        raise ValueError('Invalid boolean value')
+
+
+# https://github.com/swagger-api/swagger-spec/blob/master/versions/2.0.md#data-types
+TYPE_MAP = {'integer': int,
+            'number': float,
+            'string': py_string,
+            'boolean': boolean,
+            'array': list,
+            'object': dict}  # map of swagger types to python types
+
+
+def make_type(value, _type):
+    type_func = TYPE_MAP[_type]  # convert value to right type
+    return type_func(value)
 
 
 def deep_getattr(obj, attr):
@@ -104,18 +56,34 @@ def deep_getattr(obj, attr):
     return functools.reduce(getattr, attr.split('.'), obj)
 
 
+def deep_get(obj, keys):
+    """
+    Recurses through a nested object get a leaf value.
+    """
+    if not keys:
+        return obj
+    return deep_get(obj[keys[0]], keys[1:])
+
+
 def get_function_from_name(function_name):
     """
     Tries to get function by fully qualified name (e.g. "mymodule.myobj.myfunc")
 
     :type function_name: str
     """
-    module_name, attr_path = function_name.rsplit('.', 1)
+    if function_name is None:
+        raise ValueError("Empty function name")
+
+    if '.' in function_name:
+        module_name, attr_path = function_name.rsplit('.', 1)
+    else:
+        module_name = ''
+        attr_path = function_name
+
     module = None
     last_import_error = None
     #print "name=",function_name
     while not module:
-
         try:
             module = importlib.import_module(module_name)
         except ImportError as import_error:
@@ -144,55 +112,36 @@ def is_json_mimetype(mimetype):
     return maintype == 'application' and (subtype == 'json' or subtype.endswith('+json'))
 
 
-def produces_json(produces):
+def all_json(mimetypes):
     """
-    Returns True if all mimetypes in produces are serialized with json
+    Returns True if all mimetypes are serialized with json
 
-    :type produces: list
+    :type mimetypes: list
     :rtype: bool
 
-    >>> produces_json(['application/json'])
+    >>> all_json(['application/json'])
     True
-    >>> produces_json(['application/x.custom+json'])
+    >>> all_json(['application/x.custom+json'])
     True
-    >>> produces_json([])
+    >>> all_json([])
     True
-    >>> produces_json(['application/xml'])
+    >>> all_json(['application/xml'])
     False
-    >>> produces_json(['text/json'])
+    >>> all_json(['text/json'])
     False
-    >>> produces_json(['application/json', 'other/type'])
+    >>> all_json(['application/json', 'other/type'])
     False
-    >>> produces_json(['application/json', 'application/x.custom+json'])
+    >>> all_json(['application/json', 'application/x.custom+json'])
     True
     """
-    return all(is_json_mimetype(mimetype) for mimetype in produces)
-
-
-def boolean(s):
-    '''
-    Convert JSON/Swagger boolean value to Python, raise ValueError otherwise
-
-    >>> boolean('true')
-    True
-
-    >>> boolean('false')
-    False
-    '''
-    if isinstance(s, bool):
-        return s
-    elif not hasattr(s, 'lower'):
-        raise ValueError('Invalid boolean value')
-    elif s.lower() == 'true':
-        return True
-    elif s.lower() == 'false':
-        return False
-    else:
-        raise ValueError('Invalid boolean value')
+    return all(is_json_mimetype(mimetype) for mimetype in mimetypes)
 
 
 def is_nullable(param_def):
-    return param_def.get('x-nullable', False)
+    return (
+        param_def.get('schema', param_def).get('nullable', False) or
+        param_def.get('x-nullable', False)  # swagger2
+    )
 
 
 def is_null(value):
@@ -203,3 +152,104 @@ def is_null(value):
         return True
 
     return False
+
+
+class Jsonifier(object):
+    def __init__(self, json_):
+        self.json = json_
+
+    def dumps(self, data):
+        """ Central point where JSON serialization happens inside
+        Connexion.
+        """
+        return "{}\n".format(self.json.dumps(data, indent=2))
+
+    def loads(self, data):
+        """ Central point where JSON serialization happens inside
+        Connexion.
+        """
+        if isinstance(data, six.binary_type):
+            data = data.decode()
+
+        try:
+            return self.json.loads(data)
+        except Exception:
+            if isinstance(data, six.string_types):
+                return data
+
+
+def has_coroutine(function, api=None):
+    """
+    Checks if function is a coroutine.
+    If ``function`` is a decorator (has a ``__wrapped__`` attribute)
+    this function will also look at the wrapped function.
+    """
+    if six.PY3:  # pragma: 2.7 no cover
+        import asyncio
+
+        def iscorofunc(func):
+            iscorofunc = asyncio.iscoroutinefunction(func)
+            while not iscorofunc and hasattr(func, '__wrapped__'):
+                func = func.__wrapped__
+                iscorofunc = asyncio.iscoroutinefunction(func)
+            return iscorofunc
+
+        if api is None:
+            return iscorofunc(function)
+
+        else:
+            return any(
+                iscorofunc(func) for func in (
+                    function, api.get_request, api.get_response
+                )
+            )
+    else:  # pragma: 3 no cover
+        # there's no asyncio in python 2
+        return False
+
+
+def yamldumper(openapi):
+    """
+    Returns a nicely-formatted yaml spec.
+    :param openapi: a spec dictionary.
+    :return: a nicely-formatted, serialized yaml spec.
+    """
+    def should_use_block(value):
+        char_list = (
+          u"\u000a"  # line feed
+          u"\u000d"  # carriage return
+          u"\u001c"  # file separator
+          u"\u001d"  # group separator
+          u"\u001e"  # record separator
+          u"\u0085"  # next line
+          u"\u2028"  # line separator
+          u"\u2029"  # paragraph separator
+        )
+        for c in char_list:
+            if c in value:
+                return True
+        return False
+
+    def my_represent_scalar(self, tag, value, style=None):
+        if should_use_block(value):
+            style = '|'
+        else:
+            style = self.default_style
+
+        node = yaml.representer.ScalarNode(tag, value, style=style)
+        if self.alias_key is not None:
+            self.represented_objects[self.alias_key] = node
+        return node
+
+    class NoAnchorDumper(yaml.dumper.SafeDumper):
+        """A yaml Dumper that does not replace duplicate entries
+           with yaml anchors.
+        """
+
+        def ignore_aliases(self, *args):
+            return True
+
+    # Dump long lines as "|".
+    yaml.representer.SafeRepresenter.represent_scalar = my_represent_scalar
+
+    return yaml.dump(openapi, allow_unicode=True, Dumper=NoAnchorDumper)

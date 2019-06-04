@@ -244,7 +244,7 @@ paths:
           in: body
           schema:
             type: string
-            format: date-time
+            format: email
       produces:
         - application/json
       responses:
@@ -254,7 +254,7 @@ paths:
             type: string
 
   /schema_int:
-    get:
+    post:
       description: test schema int
       operationId: fakeapi.hello.test_schema_int
       parameters:
@@ -268,7 +268,7 @@ paths:
           description: OK
 
   /schema_array:
-    get:
+    post:
       description: test schema array
       operationId: fakeapi.hello.test_schema_array
       parameters:

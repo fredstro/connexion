@@ -23,7 +23,28 @@ paths:
           description: Name of the person to greet.
           required: true
           type: string
-
+  /greeting/{name}/{remainder}:
+    post:
+      summary: Generate greeting and collect the remainder of the url
+      description: Generates a greeting message and includes the rest of the url.
+      operationId: fakeapi.hello.post_greeting_url
+      responses:
+        '200':
+          description: greeting response with url
+          schema:
+            type: object
+      parameters:
+        - name: name
+          in: path
+          description: Name of the person to greet.
+          required: true
+          type: string
+        - name: remainder
+          in: path
+          description: the rest of the url
+          required: true
+          type: string
+          format: path
   /greetings/{name}:
     get:
       summary: Generate greeting
@@ -63,6 +84,19 @@ paths:
           description: Name of the person to say bye.
           required: true
           type: string
+
+  /flask_response_tuple:
+    get:
+      summary: Return flask response tuple
+      description: Test returning a flask response tuple
+      operationId: fakeapi.hello.get_flask_response_tuple
+      produces:
+        - application/json
+      responses:
+        200:
+          description: json response
+          schema:
+            type: object
 
   /list/{name}:
     get:
@@ -164,6 +198,19 @@ paths:
         200:
           description: OK
 
+  /test-empty-object-body:
+    post:
+      summary: Test if empty object body param is passed to handler.
+      operationId: fakeapi.hello.test_empty_object_body
+      parameters:
+        - name: stack
+          in: body
+          schema:
+            type: object
+      responses:
+        200:
+          description: OK
+
   /resolver-test/method:
     get:
       summary: Test class instance method
@@ -210,6 +257,41 @@ paths:
         200:
           description: OK
 
+  /test_array_csv_form_param:
+    post:
+      operationId: fakeapi.hello.test_array_csv_form_param
+      consumes:
+        - application/x-www-form-urlencoded
+      parameters:
+        - name: items
+          in: formData
+          description: An comma separated array of items
+          type: array
+          items:
+            type: string
+          collectionFormat: csv
+          default: ["squash", "banana"]
+      responses:
+        200:
+          description: OK
+
+  /test_array_pipes_form_param:
+    post:
+      operationId: fakeapi.hello.test_array_pipes_form_param
+      consumes:
+        - application/x-www-form-urlencoded
+      parameters:
+        - name: items
+          in: formData
+          description: An comma separated array of items
+          type: array
+          items:
+            type: integer
+          collectionFormat: pipes
+      responses:
+        200:
+          description: OK
+
   /test_array_csv_query_param:
     get:
       operationId: fakeapi.hello.test_array_csv_query_param
@@ -217,11 +299,26 @@ paths:
         - name: items
           in: query
           description: An comma separated array of items
-          required: true
           type: array
           items:
             type: string
           collectionFormat: csv
+          default: ["squash", "banana"]
+      responses:
+        200:
+          description: OK
+
+  /test_array_multi_query_param:
+    get:
+      operationId: fakeapi.hello.test_array_multi_query_param
+      parameters:
+        - name: items
+          in: query
+          description: An comma separated array of items
+          type: array
+          items:
+            type: string
+          collectionFormat: multi
       responses:
         200:
           description: OK
@@ -266,6 +363,7 @@ paths:
         - name: someint
           in: path
           type: integer
+          required: true
       responses:
         200:
           description: OK
@@ -278,6 +376,7 @@ paths:
         - name: somefloat
           in: path
           type: number
+          required: true
       responses:
         200:
           description: OK
@@ -310,6 +409,8 @@ paths:
 
   /test-formData-param:
     post:
+      consumes:
+        - application/x-www-form-urlencoded
       summary: Test formData parameter
       operationId: fakeapi.hello.test_formdata_param
       parameters:
@@ -529,6 +630,8 @@ paths:
   /nullable-parameters:
     post:
       operationId: fakeapi.hello.test_nullable_param_post
+      consumes:
+        - application/x-www-form-urlencoded
       produces:
         - application/json
       parameters:
@@ -630,6 +733,236 @@ paths:
           schema:
             type: object
 
+  /text-request:
+    post:
+      operationId: fakeapi.hello.get_data_as_text
+      consumes:
+        - "text/plain"
+      parameters:
+        - name: post_param
+          description: Just a testing parameter.
+          in: body
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: OK
+
+  /param-sanitization:
+    post:
+      operationId: fakeapi.hello.test_param_sanitization
+      consumes:
+      - multipart/form-data
+      produces:
+        - application/json
+      parameters:
+        - name: $query
+          description: Just a testing parameter with an invalid Python name
+          in: query
+          type: string
+        - name: $form
+          description: Just a testing parameter in the form data
+          in: formData
+          type: string
+      responses:
+        200:
+          description: Return parameters
+          schema:
+            type: object
+
+  /body-sanitization:
+    post:
+      operationId: fakeapi.hello.test_body_sanitization
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - name: $body
+          description: Just a testing parameter in the body
+          in: body
+          required: true
+          schema:
+            type: object
+            properties:
+              body1:
+                type: string
+              body2:
+                type: string
+      responses:
+        200:
+          description: OK
+
+  /body-sanitization-additional-properties:
+    post:
+      operationId: fakeapi.hello.test_body_sanitization_additional_properties
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - name: $body
+          description: Just a testing parameter in the body
+          in: body
+          required: true
+          schema:
+            type: object
+            properties:
+              body1:
+                type: string
+            additionalProperties: true
+      responses:
+        200:
+          description: OK
+
+  /body-sanitization-additional-properties-defined:
+    post:
+      operationId: fakeapi.hello.test_body_sanitization_additional_properties_defined
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - name: $body
+          description: Just a testing parameter in the body
+          in: body
+          required: true
+          schema:
+            type: object
+            properties:
+              body1:
+                type: string
+            additionalProperties:
+              type: string
+      responses:
+        200:
+          description: OK
+
+  /body-not-allowed-additional-properties:
+    post:
+      operationId: fakeapi.hello.test_body_not_allowed_additional_properties
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - name: $body
+          description: Just a testing parameter in the body
+          in: body
+          required: true
+          schema:
+            type: object
+            properties:
+              body1:
+                type: string
+            additionalProperties: false
+      responses:
+        200:
+          description: OK
+
+  /get_non_conforming_response:
+    get:
+      operationId: fakeapi.hello.get_empty_dict
+      responses:
+        200:
+          description: OK
+          schema:
+            type: object
+            required:
+              - some
+            properties:
+              some:
+                type: string
+  /post_wrong_content_type:
+    post:
+      operationId: fakeapi.hello.post_wrong_content_type
+      consumes:
+      - application/json
+      parameters:
+        - name: $body
+          description: Just a testing parameter in the body
+          in: body
+          required: true
+          schema:
+            type: object
+            properties:
+              body1:
+                type: string
+              body2:
+                type: string
+      responses:
+        200:
+          description: OK
+        215:
+          description: NOT-OK
+
+  /get_unicode_request:
+    get:
+      summary: Test if a unicode string in query parameter works properly in Python 2
+      operationId: fakeapi.hello.get_unicode_query
+      parameters:
+        - name: price
+          in: query
+          type: string
+      responses:
+        200:
+          description: OK
+
+  /get_unicode_response:
+    get:
+      operationId: fakeapi.hello.get_unicode_data
+      produces:
+        - "application/json"
+      responses:
+        200:
+          description: Some unicode response
+          schema:
+            type: object
+
+  /get_enum_response:
+    get:
+      operationId: fakeapi.hello.get_enum_response
+      produces:
+        - "application/json"
+      responses:
+        200:
+          description: Some HTTPStatus response
+          schema:
+            type: object
+
+  /get_httpstatus_response:
+    get:
+      operationId: fakeapi.hello.get_httpstatus_response
+      produces:
+        - "application/json"
+      responses:
+        200:
+          description: Some HTTPStatus response
+          schema:
+            type: object
+
+  /get_bad_default_response/{response_code}:
+    get:
+      operationId: fakeapi.hello.get_bad_default_response
+      produces:
+        - "application/json"
+      parameters:
+        - name: response_code
+          in: path
+          type: integer
+          required: true
+      responses:
+        200:
+          description: Some object response
+          schema:
+            type: object
+        default:
+          description: Some array response
+          schema:
+            type: array
+            items:
+              type: integer
 
 definitions:
   new_stack:

@@ -5,30 +5,27 @@ if [ $# -ne 1 ]; then
     exit 1
 fi
 
-set -xe
+set -o errexit
+set -o xtrace
 
 python3 --version
 git --version
 
 version=$1
 
-sed -i "s/__version__ = .*/__version__ = '${version}'/" */__init__.py
-
-# Do not tag/push on Go CD
-if [ -z "$GO_PIPELINE_LABEL" ]; then
-    python3 setup.py clean
-    python3 setup.py test
-    python3 setup.py flake8
-
-    git add */__init__.py
-
-    git commit -m "Bumped version to $version"
-    git push
+if [[ "$OSTYPE" == "darwin"* ]]; then
+	sed -i "" "s/__version__ = .*/__version__ = '${version}'/" */__init__.py
+else
+	sed -i "s/__version__ = .*/__version__ = '${version}'/" */__init__.py
 fi
 
-python3 setup.py sdist bdist_wheel upload
+tox -e py27-pypi,py35-pypi,py36-pypi,isort-check,isort-check-examples,isort-check-tests,flake8 --skip-missing-interpreters
 
-if [ -z "$GO_PIPELINE_LABEL" ]; then
-    git tag ${version}
-    git push --tags
-fi
+python3 setup.py sdist bdist_wheel
+twine upload dist/*
+
+# revert version
+git checkout -- */__init__.py
+
+git tag -s ${version} -m "${version}"
+git push --tags

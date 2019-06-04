@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
+import flask
+from flask import jsonify, redirect
 
-from connexion import NoContent, problem, request
-from flask import redirect
+from connexion import NoContent, ProblemException, context, problem
 
 
 class DummyClass(object):
@@ -12,7 +13,7 @@ class DummyClass(object):
     def test_method(self):
         return self.__class__.__name__
 
-class_instance = DummyClass()
+class_instance = DummyClass()  # noqa
 
 
 def get():
@@ -31,10 +32,17 @@ def post():
     return ''
 
 
-def post_greeting(name):
+def post_greeting(name, **kwargs):
     data = {'greeting': 'Hello {name}'.format(name=name)}
     return data
 
+def post_greeting3(body, **kwargs):
+    data = {'greeting': 'Hello {name}'.format(name=body["name"])}
+    return data
+
+def post_greeting_url(name, remainder, **kwargs):
+    data = {'greeting': 'Hello {name} thanks for {remainder}'.format(name=name,remainder=remainder)}
+    return data
 
 def post_goodday(name):
     data = {'greeting': 'Hello {name}'.format(name=name)}
@@ -58,12 +66,30 @@ def get_list(name):
 
 
 def get_bye(name):
-    return 'Goodbye {name}'.format(name=name), 200
+    return 'Goodbye {name}'.format(name=name)
 
 
-def get_bye_secure(name):
-    return 'Goodbye {name} (Secure: {user})'.format(name=name, user=request.user)
+def get_flask_response_tuple():
+    return jsonify({'foo': 'bar'}), 201
 
+
+def get_bye_secure(name, user, token_info):
+    return 'Goodbye {name} (Secure: {user})'.format(name=name, user=user)
+
+
+def get_bye_secure_from_flask():
+    return 'Goodbye {user} (Secure!)'.format(user=context['user'])
+
+
+def get_bye_secure_from_connexion(req_context):
+    return 'Goodbye {user} (Secure!)'.format(user=req_context['user'])
+
+
+def get_bye_secure_ignoring_context(name):
+    return 'Goodbye {name} (Secure!)'.format(name=name)
+
+def get_bye_secure_jwt(name, user, token_info):
+    return 'Goodbye {name} (Secure: {user})'.format(name=name, user=user)
 
 def with_problem():
     return problem(type='http://www.example.com/error',
@@ -189,6 +215,26 @@ def test_array_csv_query_param(items):
     return items
 
 
+def test_array_pipes_form_param3(items):
+    return items['items']
+
+
+def test_array_csv_form_param3(items):
+    return items['items']
+
+
+def test_array_pipes_form_param(items):
+    return items
+
+
+def test_array_csv_form_param(items):
+    return items
+
+
+def test_array_multi_query_param(items):
+    return items
+
+
 def test_array_pipes_query_param(items):
     return items
 
@@ -229,8 +275,15 @@ def test_default_integer_body(stack_version):
     return stack_version
 
 
+def test_empty_object_body(stack):
+    return {"stack": stack}
+
+
 def test_falsy_param(falsy):
     return falsy
+
+def test_formdata_param3(body):
+    return body["formData"]
 
 
 def test_formdata_param(formData):
@@ -241,9 +294,9 @@ def test_formdata_missing_param():
     return ''
 
 
-def test_formdata_file_upload(formData):
+def test_formdata_file_upload(formData, **kwargs):
     filename = formData.filename
-    contents = formData.read().decode('utf-8')
+    contents = formData.read().decode('utf-8', 'replace')
     return {filename: contents}
 
 
@@ -312,6 +365,14 @@ def test_nullable_param_post(post_param):
     return post_param
 
 
+def test_nullable_param_post3(body):
+    if body is None:
+        return 'it was None'
+    if body["post_param"] is None:
+        return 'it was None'
+    return body["post_param"]
+
+
 def test_nullable_param_put(contents):
     if contents is None:
         return 'it was None'
@@ -330,8 +391,16 @@ def get_data_as_binary():
     return get_blob_data(), 200, {'Content-Type': 'application/octet-stream'}
 
 
+def get_data_as_text(post_param):
+    return ''
+
+
 def get_invalid_response():
     return {"simple": object()}
+
+
+def get_empty_dict():
+    return {}
 
 
 def get_custom_problem_response():
@@ -339,13 +408,146 @@ def get_custom_problem_response():
                    ext={'amount': 23.0})
 
 
+def throw_problem_exception():
+    raise ProblemException(
+        title="As Exception",
+        detail="Something wrong or not!",
+        ext={'age': 30}
+    )
+
+
 def unordered_params_response(first, path_param, second):
     return dict(first=int(first), path_param=str(path_param), second=int(second))
 
 
-def more_than_one_scope_defined():
+def more_than_one_scope_defined(**kwargs):
     return "OK"
 
 
 def test_args_kwargs(*args, **kwargs):
     return kwargs
+
+
+def test_param_sanitization(query=None, form=None):
+    result = {}
+    if query:
+        result['query'] = query
+    if form:
+        result['form'] = form
+    return result
+
+
+def test_param_sanitization3(query=None, body=None):
+    result = {}
+    if query:
+        result['query'] = query
+    if body:
+        result['form'] = body["form"]
+    return result
+
+
+def test_body_sanitization(body=None):
+    return body
+
+def test_body_sanitization_additional_properties(body):
+    return body
+
+def test_body_sanitization_additional_properties_defined(body):
+    return body
+
+def test_body_not_allowed_additional_properties(body):
+    return body
+
+def post_wrong_content_type():
+    return "NOT OK"
+
+
+def get_unicode_query(price=None):
+    return {'price': price}
+
+
+def get_unicode_data():
+    jsonResponse = {u'currency': u'\xa3', u'key': u'leena'}
+    return jsonResponse
+
+
+def get_enum_response():
+    try:
+        from enum import Enum
+        class HTTPStatus(Enum):
+            OK = 200
+    except ImportError:
+        return {}, 200
+    else:
+        return {}, HTTPStatus.OK
+
+
+def get_httpstatus_response():
+    try:
+        from http import HTTPStatus
+    except ImportError:
+        return {}, 200
+    else:
+        return {}, HTTPStatus.OK
+
+
+def get_bad_default_response(response_code):
+    return {}, response_code
+
+
+def get_user():
+    return {'user_id': 7, 'name': 'max'}
+
+
+def get_user_with_password():
+    return {'user_id': 7, 'name': 'max', 'password': '5678'}
+
+
+def post_user(body):
+    body['user_id'] = 8
+    body.pop('password', None)
+    return body
+
+
+def apikey_info(apikey, required_scopes=None):
+    if apikey == 'mykey':
+        return {'sub': 'admin'}
+    return None
+
+
+def jwt_info(token):
+    if token == '100':
+        return {'sub': '100'}
+    return None
+
+
+def get_add_operation_on_http_methods_only():
+    return ""
+
+
+def put_add_operation_on_http_methods_only():
+    return ""
+
+
+def post_add_operation_on_http_methods_only():
+    return ""
+
+
+def delete_add_operation_on_http_methods_only():
+    return ""
+
+
+def options_add_operation_on_http_methods_only():
+    return ""
+
+
+def head_add_operation_on_http_methods_only():
+    return ""
+
+
+def patch_add_operation_on_http_methods_only():
+    return ""
+
+
+def trace_add_operation_on_http_methods_only():
+    return ""

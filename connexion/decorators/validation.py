@@ -1,30 +1,18 @@
-"""
-Copyright 2015 Zalando SE
-
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the
-License. You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
-"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
- language governing permissions and limitations under the License.
-"""
-
 import collections
 import copy
 import functools
 import logging
 import sys
 
-import flask
 import six
-from jsonschema import (Draft4Validator, ValidationError,
-                        draft4_format_checker, validate)
+from jsonschema import Draft4Validator, ValidationError, draft4_format_checker
 from werkzeug import FileStorage
 
+from ..exceptions import ExtraParameterProblem
+from ..http_facts import FORM_CONTENT_TYPES
+from ..json_schema import Draft4RequestValidator, Draft4ResponseValidator
 from ..problem import problem
-from ..utils import boolean, is_null, is_nullable
+from ..utils import all_json, boolean, is_json_mimetype, is_null, is_nullable
 
 logger = logging.getLogger('connexion.decorators.validation')
 
@@ -54,28 +42,27 @@ class TypeValidationError(Exception):
         return msg.format(**vars(self))
 
 
-def make_type(value, type):
-    type_func = TYPE_MAP.get(type)  # convert value to right type
-    return type_func(value)
+def coerce_type(param, value, parameter_type, parameter_name=None):
 
+    def make_type(value, type_literal):
+        type_func = TYPE_MAP.get(type_literal)
+        return type_func(value)
 
-def validate_type(param, value, parameter_type, parameter_name=None):
-    param_type = param.get('type')
-    parameter_name = parameter_name if parameter_name else param['name']
-    if param_type == "array":  # then logic is more complex
-        if param.get("collectionFormat") and param.get("collectionFormat") == "pipes":
-            parts = value.split("|")
-        else:  # default: csv
-            parts = value.split(",")
+    param_schema = param.get("schema", param)
+    if is_nullable(param_schema) and is_null(value):
+        return None
 
-        converted_parts = []
-        for part in parts:
+    param_type = param_schema.get('type')
+    parameter_name = parameter_name if parameter_name else param.get('name')
+    if param_type == "array":
+        converted_params = []
+        for v in value:
             try:
-                converted = make_type(part, param["items"]["type"])
+                converted = make_type(v, param_schema["items"]["type"])
             except (ValueError, TypeError):
-                converted = part
-            converted_parts.append(converted)
-        return converted_parts
+                converted = v
+            converted_params.append(converted)
+        return converted_params
     else:
         try:
             return make_type(value, param_type)
@@ -85,26 +72,39 @@ def validate_type(param, value, parameter_type, parameter_name=None):
             return value
 
 
-def validate_parameter_list(parameter_type, request_params, spec_params):
+def validate_parameter_list(request_params, spec_params):
     request_params = set(request_params)
     spec_params = set(spec_params)
 
-    extra_params = request_params.difference(spec_params)
-
-    if extra_params:
-        return "Extra {parameter_type} parameter(s) {extra_params} not in spec".format(
-            parameter_type=parameter_type, extra_params=', '.join(extra_params))
+    return request_params.difference(spec_params)
 
 
 class RequestBodyValidator(object):
-    def __init__(self, schema, is_null_value_valid=False):
+
+    def __init__(self, schema, consumes, api, is_null_value_valid=False, validator=None,
+                 strict_validation=False):
         """
         :param schema: The schema of the request body
-        :param is_nullable: Flag to indicate if null is accepted as valid value.
+        :param consumes: The list of content types the operation consumes
+        :param is_null_value_valid: Flag to indicate if null is accepted as valid value.
+        :param validator: Validator class that should be used to validate passed data
+                          against API schema. Default is jsonschema.Draft4Validator.
+        :type validator: jsonschema.IValidator
+        :param strict_validation: Flag indicating if parameters not in spec are allowed
         """
+        self.consumes = consumes
         self.schema = schema
         self.has_default = schema.get('default', False)
         self.is_null_value_valid = is_null_value_valid
+        validatorClass = validator or Draft4RequestValidator
+        self.validator = validatorClass(schema, format_checker=draft4_format_checker)
+        self.api = api
+        self.strict_validation = strict_validation
+
+    def validate_formdata_parameter_list(self, request):
+        request_params = request.form.keys()
+        spec_params = self.schema.get('properties', {}).keys()
+        return validate_parameter_list(request_params, spec_params)
 
     def __call__(self, function):
         """
@@ -113,86 +113,138 @@ class RequestBodyValidator(object):
         """
 
         @functools.wraps(function)
-        def wrapper(*args, **kwargs):
-            data = flask.request.json
+        def wrapper(request):
+            if all_json(self.consumes):
+                data = request.json
 
-            logger.debug("%s validating schema...", flask.request.url)
-            error = self.validate_schema(data)
-            if error and not self.has_default:
-                return error
+                empty_body = not(request.body or request.form or request.files)
+                if data is None and not empty_body and not self.is_null_value_valid:
+                    try:
+                        ctype_is_json = is_json_mimetype(request.headers.get("Content-Type", ""))
+                    except ValueError:
+                        ctype_is_json = False
 
-            response = function(*args, **kwargs)
+                    if ctype_is_json:
+                        # Content-Type is json but actual body was not parsed
+                        return problem(400,
+                                       "Bad Request",
+                                       "Request body is not valid JSON"
+                                       )
+                    else:
+                        # the body has contents that were not parsed as JSON
+                        return problem(415,
+                                       "Unsupported Media Type",
+                                       "Invalid Content-type ({content_type}), expected JSON data".format(
+                                           content_type=request.headers.get("Content-Type", "")
+                                       ))
+
+                logger.debug("%s validating schema...", request.url)
+                error = self.validate_schema(data, request.url)
+                if error and not self.has_default:
+                    return error
+            elif self.consumes[0] in FORM_CONTENT_TYPES:
+                data = dict(request.form.items()) or (request.body if len(request.body) > 0 else {})
+                data.update(dict.fromkeys(request.files, ''))  # validator expects string..
+                logger.debug('%s validating schema...', request.url)
+
+                if self.strict_validation:
+                    formdata_errors = self.validate_formdata_parameter_list(request)
+                    if formdata_errors:
+                        raise ExtraParameterProblem(formdata_errors, [])
+
+                if data:
+                    props = self.schema.get("properties", {})
+                    errs = []
+                    for k, param_defn in props.items():
+                        if k in data:
+                            try:
+                                data[k] = coerce_type(param_defn, data[k], 'requestBody', k)
+                            except TypeValidationError as e:
+                                errs += [str(e)]
+                                print(errs)
+                    if errs:
+                        return problem(400, 'Bad Request', errs)
+
+                error = self.validate_schema(data, request.url)
+                if error:
+                    return error
+
+            response = function(request)
             return response
 
         return wrapper
 
-    def validate_schema(self, data):
-        """
-        :type schema: dict
-        :rtype: flask.Response | None
-        """
+    def validate_schema(self, data, url):
+        # type: (dict, AnyStr) -> Union[ConnexionResponse, None]
         if self.is_null_value_valid and is_null(data):
             return None
 
         try:
-            validate(data, self.schema, format_checker=draft4_format_checker)
+            self.validator.validate(data)
         except ValidationError as exception:
-            logger.debug("{url} validation error: {error}".format(url=flask.request.url,
-                                                                  error=exception.message))
+            logger.error("{url} validation error: {error}".format(url=url,
+                                                                  error=exception.message),
+                         extra={'validator': 'body'})
             return problem(422, 'Validation Error', str(exception.message))
 
         return None
 
 
 class ResponseBodyValidator(object):
-    def __init__(self, schema, has_default=False):
+    def __init__(self, schema, validator=None):
         """
         :param schema: The schema of the response body
-        :param has_default: Flag to indicate if default value is present.
+        :param validator: Validator class that should be used to validate passed data
+                          against API schema. Default is jsonschema.Draft4Validator.
+        :type validator: jsonschema.IValidator
         """
-        self.schema = schema
-        self.has_default = schema.get('default', has_default)
+        ValidatorClass = validator or Draft4ResponseValidator
+        self.validator = ValidatorClass(schema, format_checker=draft4_format_checker)
 
-    def validate_schema(self, data):
+    def validate_schema(self, data,url):
+        # type: (dict, AnyStr) -> Union[ConnexionResponse, None]
         """
         :type schema: dict
         :rtype: flask.Response | None
         """
-        #print "data=",data
         try:
-            validate(data, self.schema, format_checker=draft4_format_checker)
+            self.validator.validate(data)
         except ValidationError as exception:
-            logger.error("{url} validation error: {error} INFO:{info}".format(url=flask.request.url,
+            logger.error("{url} validation error: {error} INFO:{info}".format(url=url,
                                                                   error=exception,
-                                                                  info=sys.exc_info()))
+                                                                  info=sys.exc_info()),
+                         extra={'validator': 'response'})
             six.reraise(*sys.exc_info())
         return None
 
 
 class ParameterValidator(object):
-    def __init__(self, parameters, strict_validation=False):
+    def __init__(self, parameters, api, strict_validation=False):
         """
         :param parameters: List of request parameter dictionaries
-        :param strict_validation: Flag indicating if parametrs not in spec are allowed
+        :param api: api that the validator is attached to
+        :param strict_validation: Flag indicating if parameters not in spec are allowed
         """
         self.parameters = collections.defaultdict(list)
         for p in parameters:
             self.parameters[p['in']].append(p)
 
+        self.api = api
         self.strict_validation = strict_validation
 
     @staticmethod
-    def validate_parameter(parameter_type, value, param):
+    def validate_parameter(parameter_type, value, param, param_name=None):
         if value is not None:
             if is_nullable(param) and is_null(value):
                 return
 
             try:
-                converted_value = validate_type(param, value, parameter_type)
+                converted_value = coerce_type(param, value, parameter_type, param_name)
             except TypeValidationError as e:
                 return str(e)
 
             param = copy.deepcopy(param)
+            param = param.get('schema', param)
             if 'required' in param:
                 del param['required']
             try:
@@ -202,47 +254,56 @@ class ParameterValidator(object):
                         format_checker=draft4_format_checker,
                         types={'file': FileStorage}).validate(converted_value)
                 else:
-                    validate(converted_value, param, format_checker=draft4_format_checker)
+                    Draft4Validator(
+                        param, format_checker=draft4_format_checker).validate(converted_value)
             except ValidationError as exception:
-                #print(converted_value, type(converted_value), param.get('type'), param, '<--------------------------')
+                debug_msg = 'Error while converting value {converted_value} from param ' \
+                            '{type_converted_value} of type real type {param_type} to the declared type {param}'
+                fmt_params = dict(
+                    converted_value=str(converted_value),
+                    type_converted_value=type(converted_value),
+                    param_type=param.get('type'),
+                    param=param
+                )
+                logger.info(debug_msg.format(**fmt_params))
                 return str(exception)
 
         elif param.get('required'):
             return "Missing {parameter_type} parameter '{param[name]}'".format(**locals())
 
-    def validate_query_parameter_list(self):
-        request_params = flask.request.args.keys()
+    def validate_query_parameter_list(self, request):
+        request_params = request.query.keys()
         spec_params = [x['name'] for x in self.parameters.get('query', [])]
-        return validate_parameter_list('query', request_params, spec_params)
+        return validate_parameter_list(request_params, spec_params)
 
-    def validate_formdata_parameter_list(self):
-        request_params = flask.request.form.keys()
+    def validate_formdata_parameter_list(self, request):
+        request_params = request.form.keys()
         spec_params = [x['name'] for x in self.parameters.get('formData', [])]
-        return validate_parameter_list('formData', request_params, spec_params)
+        return validate_parameter_list(request_params, spec_params)
 
-    def validate_query_parameter(self, param):
+    def validate_query_parameter(self, param, request):
         """
         Validate a single query parameter (request.args in Flask)
 
         :type param: dict
         :rtype: str
         """
-        val = flask.request.args.get(param['name'])
+        val = request.query.get(param['name'])
         return self.validate_parameter('query', val, param)
 
-    def validate_path_parameter(self, args, param):
-        val = args.get(param['name'].replace('-', '_'))
+    def validate_path_parameter(self, param, request):
+        val = request.path_params.get(param['name'].replace('-', '_'))
         return self.validate_parameter('path', val, param)
 
-    def validate_header_parameter(self, param):
-        val = flask.request.headers.get(param['name'])
+    def validate_header_parameter(self, param, request):
+        val = request.headers.get(param['name'])
         return self.validate_parameter('header', val, param)
 
-    def validate_formdata_parameter(self, param):
-        if param.get('type') == 'file':
-            val = flask.request.files.get(param['name'])
+    def validate_formdata_parameter(self, param_name, param, request):
+        if param.get('type') == 'file' or param.get('format') == 'binary':
+            val = request.files.get(param_name)
         else:
-            val = flask.request.form.get(param['name'])
+            val = request.form.get(param_name)
 
         return self.validate_parameter('formdata', val, param)
 
@@ -256,39 +317,40 @@ class ParameterValidator(object):
         http_code = 422
         error_message = 'Validation Error'
         @functools.wraps(function)
-        def wrapper(*args, **kwargs):
-            logger.debug("%s validating parameters...", flask.request.url)
+        def wrapper(request):
+            logger.debug("%s validating parameters...", request.url)
 
             if self.strict_validation:
-                error = self.validate_query_parameter_list()
-                if error:
-                    return problem(400, 'Bad Request', error)
+                query_errors = self.validate_query_parameter_list(request)
+                formdata_errors = self.validate_formdata_parameter_list(request)
 
-                error = self.validate_formdata_parameter_list()
-                if error:
-                    return problem(400, 'Bad Request', error)
+                if formdata_errors or query_errors:
+                    raise ExtraParameterProblem(formdata_errors, query_errors)
 
             for param in self.parameters.get('query', []):
-                error = self.validate_query_parameter(param)
+                error = self.validate_query_parameter(param, request)
                 if error:
-                    return problem(http_code, error_message, error)
+                    response = problem(http_code, error_message, error)
+                    return self.api.get_response(response)
 
             for param in self.parameters.get('path', []):
-                error = self.validate_path_parameter(kwargs, param)
+                error = self.validate_path_parameter(param, request)
                 if error:
-                    return problem(http_code, error_message, error)
+                    response = problem(http_code, error_message, error)
+                    return self.api.get_response(response)
 
             for param in self.parameters.get('header', []):
-                error = self.validate_header_parameter(param)
+                error = self.validate_header_parameter(param, request)
                 if error:
-                    return problem(http_code, error_message, error)
+                    response = problem(http_code, error_message, error)
+                    return self.api.get_response(response)
 
             for param in self.parameters.get('formData', []):
-                error = self.validate_formdata_parameter(param)
+                error = self.validate_formdata_parameter(param["name"], param, request)
                 if error:
-                    return problem(http_code, error_message, error)
+                    response = problem(http_code, error_message, error)
+                    return self.api.get_response(response)
 
-            response = function(*args, **kwargs)
-            return response
+            return function(request)
 
         return wrapper

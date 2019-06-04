@@ -1,36 +1,21 @@
 import math
 
-import connexion.app
-import connexion.utils as utils
-
 import pytest
 from mock import MagicMock
 
-
-def test_flaskify_path():
-    assert utils.flaskify_path("{test-path}") == "<test_path>"
-    assert utils.flaskify_path("api/{test-path}") == "api/<test_path>"
-    assert utils.flaskify_path("my-api/{test-path}") == "my-api/<test_path>"
-    assert utils.flaskify_path("foo_bar/{a-b}/{c_d}") == "foo_bar/<a_b>/<c_d>"
-    assert utils.flaskify_path("foo/{a}/{b}", {'a': 'integer'}) == "foo/<int:a>/<b>"
-    assert utils.flaskify_path("foo/{a}/{b}", {'a': 'number'}) == "foo/<float:a>/<b>"
-
-
-def test_flaskify_endpoint():
-    assert utils.flaskify_endpoint("module.function") == "module_function"
-    assert utils.flaskify_endpoint("function") == "function"
-
-    name = 'module.function'
-    randlen = 6
-    res = utils.flaskify_endpoint(name, randlen)
-    assert res.startswith('module_function')
-    assert len(res) == len(name) + 1 + randlen
+import connexion.apps
+from connexion import utils
 
 
 def test_get_function_from_name():
     function = utils.get_function_from_name('math.ceil')
     assert function == math.ceil
     assert function(2.7) == 3
+
+
+def test_get_function_from_name_no_module():
+    with pytest.raises(ValueError):
+        utils.get_function_from_name('math')
 
 
 def test_get_function_from_name_attr_error(monkeypatch):
@@ -47,8 +32,8 @@ def test_get_function_from_name_attr_error(monkeypatch):
 
 
 def test_get_function_from_name_for_class_method():
-    function = utils.get_function_from_name('connexion.app.App.common_error_handler')
-    assert function == connexion.app.App.common_error_handler
+    function = utils.get_function_from_name('connexion.FlaskApp.common_error_handler')
+    assert function == connexion.FlaskApp.common_error_handler
 
 
 def test_boolean():

@@ -1,21 +1,7 @@
-"""
-Copyright 2015 Zalando SE
-
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the
-License. You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
-"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
- language governing permissions and limitations under the License.
-"""
-import json
-
-import flask
+from .lifecycle import ConnexionResponse
 
 
-def problem(status, title, detail, type='about:blank', instance=None, headers=None, ext=None):
+def problem(status, title, detail, type=None, instance=None, headers=None, ext=None):
     """
     Returns a `Problem Details <https://tools.ietf.org/html/draft-ietf-appsawg-http-problem-00>`_ error response.
 
@@ -38,19 +24,19 @@ def problem(status, title, detail, type='about:blank', instance=None, headers=No
     :type headers: dict | None
     :param ext: Extension members to include in the body
     :type ext: dict | None
-    :return: Json serialized error response
-    :rtype: flask.Response
+    :return: error response
+    :rtype: ConnexionResponse
     """
-    problem_response = {'type': type, 'title': title, 'detail': detail, 'status': status, }
+    if not type:
+        type = 'about:blank'
+
+    problem_response = {'type': type, 'title': title, 'detail': detail, 'status': status}
     if instance:
         problem_response['instance'] = instance
     if ext:
         problem_response.update(ext)
 
-    body = [json.dumps(problem_response, indent=2), '\n']
-    response = flask.current_app.response_class(body, mimetype='application/problem+json',
-                                                status=status)  # type: flask.Response
-    if headers:
-        response.headers.extend(headers)
-
-    return response
+    mimetype = content_type = 'application/problem+json'
+    return ConnexionResponse(status, mimetype, content_type,
+                             body=problem_response,
+                             headers=headers)
