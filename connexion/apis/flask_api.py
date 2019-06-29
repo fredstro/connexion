@@ -224,13 +224,17 @@ class FlaskApi(AbstractAPI):
 
         if not isinstance(response, flask.current_app.response_class):
             response = cls.get_response(response, mimetype)
-
+        # Add support for direct passthgouh of files.
+        if not response.direct_passthrough:
+            data = response.get_data()
+        else:
+            data = response.response
         return ConnexionResponse(
             status_code=response.status_code,
             mimetype=response.mimetype,
             content_type=response.content_type,
             headers=response.headers,
-            body=response.get_data(),
+            body=data,
         )
 
     @classmethod
