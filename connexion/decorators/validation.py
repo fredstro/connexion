@@ -14,6 +14,8 @@ from ..json_schema import Draft4RequestValidator, Draft4ResponseValidator
 from ..problem import problem
 from ..utils import all_json, boolean, is_json_mimetype, is_null, is_nullable
 
+http_validation_error_code = 422
+
 logger = logging.getLogger('connexion.decorators.validation')
 
 TYPE_MAP = {
@@ -314,7 +316,7 @@ class ParameterValidator(object):
 
         COMMENT: I changed error codes from 400 to 422
         """
-        http_code = 422
+        http_code = http_validation_error_code
         error_message = 'Validation Error'
         @functools.wraps(function)
         def wrapper(request):

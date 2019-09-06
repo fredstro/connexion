@@ -39,7 +39,7 @@ def test_validator_map(json_validation_spec_dir, spec):
     assert res.status_code == 200
 
     res = app_client.post('/v1.0/minlength', data=json.dumps({'foo': ''}), content_type='application/json') # type: flask.Response
-    assert res.status_code == 400
+    assert res.status_code == 422
 
 
 @pytest.mark.parametrize("spec", SPECS)
@@ -56,7 +56,7 @@ def test_readonly(json_validation_spec_dir, spec):
     assert json.loads(res.data.decode()).get('user_id') == 8
 
     res = app_client.post('/v1.0/user', data=json.dumps({'user_id': 9, 'name': 'max'}), content_type='application/json') # type: flask.Response
-    assert res.status_code == 400
+    assert res.status_code == 422
 
 
 @pytest.mark.parametrize("spec", SPECS)

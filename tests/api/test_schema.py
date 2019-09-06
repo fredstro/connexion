@@ -1,23 +1,24 @@
 import json
 
+http_validation_error_code = 422
 
 def test_schema(schema_app):
     app_client = schema_app.app.test_client()
     headers = {'Content-type': 'application/json'}
 
     empty_request = app_client.post('/v1.0/test_schema', headers=headers, data=json.dumps({}))  # type: flask.Response
-    assert empty_request.status_code == 400
+    assert empty_request.status_code == http_validation_error_code
     assert empty_request.content_type == 'application/problem+json'
     empty_request_response = json.loads(empty_request.data.decode('utf-8', 'replace'))  # type: dict
-    assert empty_request_response['title'] == 'Bad Request'
+    assert empty_request_response['title'] == 'Validation Error'
     assert empty_request_response['detail'].startswith("'image_version' is a required property")
 
     bad_type = app_client.post('/v1.0/test_schema', headers=headers,
                                data=json.dumps({'image_version': 22}))  # type: flask.Response
-    assert bad_type.status_code == 400
+    assert bad_type.status_code == http_validation_error_code
     assert bad_type.content_type == 'application/problem+json'
     bad_type_response = json.loads(bad_type.data.decode('utf-8', 'replace'))  # type: dict
-    assert bad_type_response['title'] == 'Bad Request'
+    assert bad_type_response['title'] == 'Validation Error'
     assert bad_type_response['detail'].startswith("22 is not of type 'string'")
 
     good_request = app_client.post('/v1.0/test_schema', headers=headers,
@@ -34,10 +35,10 @@ def test_schema(schema_app):
     assert good_request_extra_response['image_version'] == 'version'
 
     wrong_type = app_client.post('/v1.0/test_schema', headers=headers, data=json.dumps(42))  # type: flask.Response
-    assert wrong_type.status_code == 400
+    assert wrong_type.status_code == http_validation_error_code
     assert wrong_type.content_type == 'application/problem+json'
     wrong_type_response = json.loads(wrong_type.data.decode('utf-8', 'replace'))  # type: dict
-    assert wrong_type_response['title'] == 'Bad Request'
+    assert wrong_type_response['title'] == 'Validation Error'
     assert wrong_type_response['detail'].startswith("42 is not of type 'object'")
 
 
@@ -97,18 +98,18 @@ def test_schema_list(schema_app):
     headers = {'Content-type': 'application/json'}
 
     wrong_type = app_client.post('/v1.0/test_schema_list', headers=headers, data=json.dumps(42))  # type: flask.Response
-    assert wrong_type.status_code == 400
+    assert wrong_type.status_code == http_validation_error_code
     assert wrong_type.content_type == 'application/problem+json'
     wrong_type_response = json.loads(wrong_type.data.decode('utf-8', 'replace'))  # type: dict
-    assert wrong_type_response['title'] == 'Bad Request'
+    assert wrong_type_response['title'] == 'Validation Error'
     assert wrong_type_response['detail'].startswith("42 is not of type 'array'")
 
     wrong_items = app_client.post('/v1.0/test_schema_list', headers=headers,
                                   data=json.dumps([42]))  # type: flask.Response
-    assert wrong_items.status_code == 400
+    assert wrong_items.status_code == http_validation_error_code
     assert wrong_items.content_type == 'application/problem+json'
     wrong_items_response = json.loads(wrong_items.data.decode('utf-8', 'replace'))  # type: dict
-    assert wrong_items_response['title'] == 'Bad Request'
+    assert wrong_items_response['title'] == 'Validation Error'
     assert wrong_items_response['detail'].startswith("42 is not of type 'string'")
 
 
@@ -130,18 +131,18 @@ def test_schema_map(schema_app):
     }
 
     wrong_type = app_client.post('/v1.0/test_schema_map', headers=headers, data=json.dumps(42))  # type: flask.Response
-    assert wrong_type.status_code == 400
+    assert wrong_type.status_code == http_validation_error_code
     assert wrong_type.content_type == 'application/problem+json'
     wrong_type_response = json.loads(wrong_type.data.decode('utf-8', 'replace'))  # type: dict
-    assert wrong_type_response['title'] == 'Bad Request'
+    assert wrong_type_response['title'] == 'Validation Error'
     assert wrong_type_response['detail'].startswith("42 is not of type 'object'")
 
     wrong_items = app_client.post('/v1.0/test_schema_map', headers=headers,
                                   data=json.dumps(invalid_object))  # type: flask.Response
-    assert wrong_items.status_code == 400
+    assert wrong_items.status_code == http_validation_error_code
     assert wrong_items.content_type == 'application/problem+json'
     wrong_items_response = json.loads(wrong_items.data.decode('utf-8', 'replace'))  # type: dict
-    assert wrong_items_response['title'] == 'Bad Request'
+    assert wrong_items_response['title'] == 'Validation Error'
     assert wrong_items_response['detail'].startswith("42 is not of type 'object'")
 
     right_type = app_client.post('/v1.0/test_schema_map', headers=headers,
@@ -169,18 +170,18 @@ def test_schema_recursive(schema_app):
 
     wrong_type = app_client.post('/v1.0/test_schema_recursive', headers=headers,
                                  data=json.dumps(42))  # type: flask.Response
-    assert wrong_type.status_code == 400
+    assert wrong_type.status_code == http_validation_error_code
     assert wrong_type.content_type == 'application/problem+json'
     wrong_type_response = json.loads(wrong_type.data.decode('utf-8'))  # type: dict
-    assert wrong_type_response['title'] == 'Bad Request'
+    assert wrong_type_response['title'] == 'Validation Error'
     assert wrong_type_response['detail'].startswith("42 is not of type 'object'")
 
     wrong_items = app_client.post('/v1.0/test_schema_recursive', headers=headers,
                                   data=json.dumps(invalid_object))  # type: flask.Response
-    assert wrong_items.status_code == 400
+    assert wrong_items.status_code == http_validation_error_code
     assert wrong_items.content_type == 'application/problem+json'
     wrong_items_response = json.loads(wrong_items.data.decode('utf-8'))  # type: dict
-    assert wrong_items_response['title'] == 'Bad Request'
+    assert wrong_items_response['title'] == 'Validation Error'
     assert wrong_items_response['detail'].startswith("42 is not of type 'object'")
 
     right_type = app_client.post('/v1.0/test_schema_recursive', headers=headers,
@@ -194,10 +195,10 @@ def test_schema_format(schema_app):
 
     wrong_type = app_client.post('/v1.0/test_schema_format', headers=headers,
                                  data=json.dumps("xy"))  # type: flask.Response
-    assert wrong_type.status_code == 400
+    assert wrong_type.status_code == http_validation_error_code
     assert wrong_type.content_type == 'application/problem+json'
     wrong_type_response = json.loads(wrong_type.data.decode('utf-8', 'replace'))  # type: dict
-    assert wrong_type_response['title'] == 'Bad Request'
+    assert wrong_type_response['title'] == 'Validation Error'
     assert "'xy' is not a 'email'" in wrong_type_response['detail']
 
 

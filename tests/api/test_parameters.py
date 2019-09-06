@@ -3,7 +3,7 @@ from __future__ import unicode_literals
 
 import json
 from io import BytesIO
-
+http_validation_error_code = 422
 
 def test_parameter_validation(simple_app):
     app_client = simple_app.app.test_client()
@@ -15,14 +15,14 @@ def test_parameter_validation(simple_app):
 
     for invalid_int in '', 'foo', '0.1':
         response = app_client.get(url, query_string={'int': invalid_int})  # type: flask.Response
-        assert response.status_code == 400
+        assert response.status_code == http_validation_error_code
 
     response = app_client.get(url, query_string={'int': '123'})  # type: flask.Response
     assert response.status_code == 200
 
     for invalid_bool in '', 'foo', 'yes':
         response = app_client.get(url, query_string={'bool': invalid_bool})  # type: flask.Response
-        assert response.status_code == 400
+        assert response.status_code == http_validation_error_code
 
     response = app_client.get(url, query_string={'bool': 'true'})  # type: flask.Response
     assert response.status_code == 200
@@ -33,7 +33,7 @@ def test_required_query_param(simple_app):
 
     url = '/v1.0/test_required_query_param'
     response = app_client.get(url)
-    assert response.status_code == 400
+    assert response.status_code == http_validation_error_code
 
     response = app_client.get(url, query_string={'n': '1.23'})
     assert response.status_code == 200
@@ -170,7 +170,7 @@ def test_formdata_param(simple_app):
 def test_formdata_bad_request(simple_app):
     app_client = simple_app.app.test_client()
     resp = app_client.post('/v1.0/test-formData-param')
-    assert resp.status_code == 400
+    assert resp.status_code == http_validation_error_code
     response = json.loads(resp.data.decode('utf-8', 'replace'))
     assert response['detail'] in [
         "Missing formdata parameter 'formData'",
@@ -215,7 +215,7 @@ def test_formdata_file_upload(simple_app):
 def test_formdata_file_upload_bad_request(simple_app):
     app_client = simple_app.app.test_client()
     resp = app_client.post('/v1.0/test-formData-file-upload')
-    assert resp.status_code == 400
+    assert resp.status_code == 422
     response = json.loads(resp.data.decode('utf-8', 'replace'))
     assert response['detail'] in [
         "Missing formdata parameter 'formData'",
@@ -237,7 +237,7 @@ def test_body_not_allowed_additional_properties(simple_app):
         '/v1.0/body-not-allowed-additional-properties',
         data=json.dumps(body),
         headers={'Content-Type': 'application/json'})
-    assert resp.status_code == 400
+    assert resp.status_code == http_validation_error_code
 
     response = json.loads(resp.data.decode('utf-8', 'replace'))
     assert 'Additional properties are not allowed' in response['detail']
@@ -288,13 +288,13 @@ def test_required_param_miss_config(simple_app):
     app_client = simple_app.app.test_client()
 
     resp = app_client.get('/v1.0/test-required-param')
-    assert resp.status_code == 400
+    assert resp.status_code == http_validation_error_code
 
     resp = app_client.get('/v1.0/test-required-param', query_string={'simple': 'test'})
     assert resp.status_code == 200
 
     resp = app_client.get('/v1.0/test-required-param')
-    assert resp.status_code == 400
+    assert resp.status_code == http_validation_error_code
 
 
 def test_parameters_defined_in_path_level(simple_app):
@@ -304,7 +304,7 @@ def test_parameters_defined_in_path_level(simple_app):
     assert json.loads(resp.data.decode('utf-8', 'replace')) == ["nice-get"]
 
     resp = app_client.get('/v1.0/parameters-in-root-path')
-    assert resp.status_code == 400
+    assert resp.status_code == http_validation_error_code
 
 
 def test_array_in_path(simple_app):
