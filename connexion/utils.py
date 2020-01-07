@@ -1,14 +1,7 @@
 import functools
 import importlib
 
-import six
 import yaml
-
-# Python 2/3 compatibility:
-try:
-    py_string = unicode
-except NameError:  # pragma: no cover
-    py_string = str  # pragma: no cover
 
 
 def boolean(s):
@@ -36,7 +29,7 @@ def boolean(s):
 # https://github.com/swagger-api/swagger-spec/blob/master/versions/2.0.md#data-types
 TYPE_MAP = {'integer': int,
             'number': float,
-            'string': py_string,
+            'string': str,
             'boolean': boolean,
             'array': list,
             'object': dict}  # map of swagger types to python types
@@ -59,10 +52,21 @@ def deep_getattr(obj, attr):
 def deep_get(obj, keys):
     """
     Recurses through a nested object get a leaf value.
+
+    There are cases where the use of inheritance or polymorphism-- the use of allOf or
+    oneOf keywords-- will cause the obj to be a list. In this case the keys will
+    contain one or more strings containing integers.
+
+    :type obj: list or dict
+    :type keys: list of strings
     """
     if not keys:
         return obj
-    return deep_get(obj[keys[0]], keys[1:])
+
+    if isinstance(obj, list):
+        return deep_get(obj[int(keys[0])], keys[1:])
+    else:
+        return deep_get(obj[keys[0]], keys[1:])
 
 
 def get_function_from_name(function_name):
@@ -154,58 +158,30 @@ def is_null(value):
     return False
 
 
-class Jsonifier(object):
-    def __init__(self, json_):
-        self.json = json_
-
-    def dumps(self, data):
-        """ Central point where JSON serialization happens inside
-        Connexion.
-        """
-        return "{}\n".format(self.json.dumps(data, indent=2))
-
-    def loads(self, data):
-        """ Central point where JSON serialization happens inside
-        Connexion.
-        """
-        if isinstance(data, six.binary_type):
-            data = data.decode()
-
-        try:
-            return self.json.loads(data)
-        except Exception:
-            if isinstance(data, six.string_types):
-                return data
-
-
 def has_coroutine(function, api=None):
     """
     Checks if function is a coroutine.
     If ``function`` is a decorator (has a ``__wrapped__`` attribute)
     this function will also look at the wrapped function.
     """
-    if six.PY3:  # pragma: 2.7 no cover
-        import asyncio
+    import asyncio
 
-        def iscorofunc(func):
+    def iscorofunc(func):
+        iscorofunc = asyncio.iscoroutinefunction(func)
+        while not iscorofunc and hasattr(func, '__wrapped__'):
+            func = func.__wrapped__
             iscorofunc = asyncio.iscoroutinefunction(func)
-            while not iscorofunc and hasattr(func, '__wrapped__'):
-                func = func.__wrapped__
-                iscorofunc = asyncio.iscoroutinefunction(func)
-            return iscorofunc
+        return iscorofunc
 
-        if api is None:
-            return iscorofunc(function)
+    if api is None:
+        return iscorofunc(function)
 
-        else:
-            return any(
-                iscorofunc(func) for func in (
-                    function, api.get_request, api.get_response
-                )
+    else:
+        return any(
+            iscorofunc(func) for func in (
+                function, api.get_request, api.get_response
             )
-    else:  # pragma: 3 no cover
-        # there's no asyncio in python 2
-        return False
+        )
 
 
 def yamldumper(openapi):
@@ -253,3 +229,12 @@ def yamldumper(openapi):
     yaml.representer.SafeRepresenter.represent_scalar = my_represent_scalar
 
     return yaml.dump(openapi, allow_unicode=True, Dumper=NoAnchorDumper)
+
+
+def create_empty_dict_from_list(_list, _dict, _end_value):
+    """create from ['foo', 'bar'] a dict like {'foo': {'bar': {}}} recursively. needed for converting query params"""
+    current_key = _list.pop(0)
+    if _list:
+        return {current_key: create_empty_dict_from_list(_list, _dict, _end_value)}
+    else:
+        return {current_key: _end_value}

@@ -64,17 +64,15 @@ def test_verify_oauth_scopes_remote(monkeypatch):
     session.get = get_tokeninfo_response
     monkeypatch.setattr('connexion.decorators.security.session', session)
 
-    with pytest.raises(OAuthScopeProblem):
+    with pytest.raises(OAuthScopeProblem, match="Provided token doesn't have the required scope"):
         wrapped_func(request, ['admin'])
-        pytest.fail("Provided token doesn't have the required scope")
 
     tokeninfo["scope"] += " admin"
     assert wrapped_func(request, ['admin']) is not None
 
     tokeninfo["scope"] = ["foo", "bar"]
-    with pytest.raises(OAuthScopeProblem):
+    with pytest.raises(OAuthScopeProblem, match="Provided token doesn't have the required scope"):
         wrapped_func(request, ['admin'])
-        pytest.fail("Provided token doesn't have the required scope")
 
     tokeninfo["scope"].append("admin")
     assert wrapped_func(request, ['admin']) is not None
@@ -104,19 +102,15 @@ def test_verify_oauth_scopes_local():
     request = MagicMock()
     request.headers = {"Authorization": "Bearer 123"}
 
-    with pytest.raises(OAuthScopeProblem):
+    with pytest.raises(OAuthScopeProblem, match="Provided token doesn't have the required scope"):
         wrapped_func(request, ['admin'])
-        pytest.fail("Provided token doesn't have the required scope")
-
 
     tokeninfo["scope"] += " admin"
     assert wrapped_func(request, ['admin']) is not None
 
     tokeninfo["scope"] = ["foo", "bar"]
-    with pytest.raises(OAuthScopeProblem):
+    with pytest.raises(OAuthScopeProblem, match="Provided token doesn't have the required scope"):
         wrapped_func(request, ['admin'])
-        pytest.fail("Provided token doesn't have the required scope")
-
 
     tokeninfo["scope"].append("admin")
     assert wrapped_func(request, ['admin']) is not None

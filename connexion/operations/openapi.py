@@ -190,7 +190,7 @@ class OpenAPIOperation(AbstractOperation):
         try:
             # TODO also use example header?
             return (
-                list(deep_get(self._responses, examples_path).values())[0],
+                list(deep_get(self._responses, examples_path).values())[0]['value'],
                 status_code
             )
         except (KeyError, IndexError):
@@ -244,12 +244,12 @@ class OpenAPIOperation(AbstractOperation):
         return {}
 
     def _get_body_argument(self, body, arguments, has_kwargs, sanitize):
-        x_body_name = self.body_schema.get('x-body-name', 'body')
+        x_body_name = sanitize(self.body_schema.get('x-body-name', 'body'))
         if is_nullable(self.body_schema) and is_null(body):
             return {x_body_name: None}
 
         default_body = self.body_schema.get('default', {})
-        body_props = {sanitize(k): {"schema": v} for k, v
+        body_props = {k: {"schema": v} for k, v
                       in self.body_schema.get("properties", {}).items()}
 
         # by OpenAPI specification `additionalProperties` defaults to `true`
@@ -269,25 +269,27 @@ class OpenAPIOperation(AbstractOperation):
 
         res = {}
         if body_props or additional_props:
-            res = self._sanitize_body_argument(body_arg, body_props, additional_props, sanitize)
+            res = self._get_typed_body_values(body_arg, body_props, additional_props)
 
         if x_body_name in arguments or has_kwargs:
             return {x_body_name: res}
         return {}
 
-    def _sanitize_body_argument(self, body_arg, body_props, additional_props, sanitize):
+    def _get_typed_body_values(self, body_arg, body_props, additional_props):
         """
+        Return a copy of the provided body_arg dictionary
+        whose values will have the appropriate types
+        as defined in the provided schemas.
+
         :type body_arg: type dict
         :type body_props: dict
         :type additional_props: dict|bool
-        :type sanitize: types.FunctionType
         :rtype: dict
         """
         additional_props_defn = {"schema": additional_props} if isinstance(additional_props, dict) else None
         res = {}
 
         for key, value in body_arg.items():
-            key = sanitize(key)
             try:
                 prop_defn = body_props[key]
                 res[key] = self._get_val_from_param(value, prop_defn)
@@ -322,5 +324,16 @@ class OpenAPIOperation(AbstractOperation):
 
         if query_schema["type"] == "array":
             return [make_type(part, query_schema["items"]["type"]) for part in value]
+        elif query_schema["type"] == "object" and 'properties' in query_schema:
+            return_dict = {}
+            for prop_key in query_schema['properties'].keys():
+                prop_value = value.get(prop_key, None)
+                if prop_value is not None:  # False is a valid value for boolean values
+                    try:
+                        return_dict[prop_key] = make_type(value[prop_key],
+                                                          query_schema['properties'][prop_key]['type'])
+                    except (KeyError, TypeError):
+                        return value
+            return return_dict
         else:
             return make_type(value, query_schema["type"])
