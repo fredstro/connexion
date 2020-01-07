@@ -9,7 +9,7 @@ from jsonschema import Draft4Validator, ValidationError, draft4_format_checker
 from jsonschema.validators import extend
 from werkzeug.datastructures import FileStorage
 
-from ..exceptions import ExtraParameterProblem, BadRequestProblem, UnsupportedMediaTypeProblem
+from ..exceptions import ExtraParameterProblem, ValidationProblem, UnsupportedMediaTypeProblem
 from ..http_facts import FORM_CONTENT_TYPES
 from ..json_schema import Draft4RequestValidator, Draft4ResponseValidator
 from ..utils import all_json, boolean, is_json_mimetype, is_null, is_nullable
@@ -18,7 +18,7 @@ _jsonschema_3_or_newer = pkg_resources.parse_version(
         pkg_resources.get_distribution("jsonschema").version) >= \
     pkg_resources.parse_version("3.0.0")
 
-http_validation_error_code = 422
+
 
 logger = logging.getLogger('connexion.decorators.validation')
 
@@ -148,7 +148,7 @@ class RequestBodyValidator(object):
 
                     if ctype_is_json:
                         # Content-Type is json but actual body was not parsed
-                        raise BadRequestProblem(detail="Request body is not valid JSON")
+                        raise ValidationProblem(detail="Request body is not valid JSON")
                     else:
                         # the body has contents that were not parsed as JSON
                         raise UnsupportedMediaTypeProblem(
@@ -180,7 +180,7 @@ class RequestBodyValidator(object):
                                 errs += [str(e)]
                                 print(errs)
                     if errs:
-                        raise BadRequestProblem(detail=errs)
+                        raise ValidationProblem(detail=errs)
 
                 self.validate_schema(data, request.url)
 
@@ -205,7 +205,7 @@ class RequestBodyValidator(object):
                     url=url, error=exception.message,
                     error_path_msg=error_path_msg),
                 extra={'validator': 'body'})
-            raise BadRequestProblem(detail="{message}{error_path_msg}".format(
+            raise ValidationProblem(detail="{message}{error_path_msg}".format(
                                message=exception.message,
                                error_path_msg=error_path_msg))
 
@@ -350,7 +350,6 @@ class ParameterValidator(object):
 
         COMMENT: I changed error codes from 400 to 422
         """
-        http_code = http_validation_error_code
         error_message = 'Validation Error'
         @functools.wraps(function)
         def wrapper(request):
@@ -366,27 +365,27 @@ class ParameterValidator(object):
             for param in self.parameters.get('query', []):
                 error = self.validate_query_parameter(param, request)
                 if error:
-                    raise BadRequestProblem(detail=error)
+                    raise ValidationProblem(detail=error)
 
             for param in self.parameters.get('path', []):
                 error = self.validate_path_parameter(param, request)
                 if error:
-                    raise BadRequestProblem(detail=error)
+                    raise ValidationProblem(detail=error)
 
             for param in self.parameters.get('header', []):
                 error = self.validate_header_parameter(param, request)
                 if error:
-                    raise BadRequestProblem(detail=error)
+                    raise ValidationProblem(detail=error)
 
             for param in self.parameters.get('cookie', []):
                 error = self.validate_cookie_parameter(param, request)
                 if error:
-                    raise BadRequestProblem(detail=error)
+                    raise ValidationProblem(detail=error)
 
             for param in self.parameters.get('formData', []):
                 error = self.validate_formdata_parameter(param["name"], param, request)
                 if error:
-                    raise BadRequestProblem(detail=error)
+                    raise ValidationProblem(detail=error)
 
             return function(request)
 

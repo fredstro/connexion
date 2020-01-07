@@ -88,7 +88,13 @@ class ResolverProblem(ProblemException):
 class BadRequestProblem(ProblemException):
 
     def __init__(self, title='Bad Request', detail=None):
-        super(BadRequestProblem, self).__init__(status=400, title=title, detail=detail)
+        super(BadRequestProblem, self).__init__(status=status, title=title, detail=detail)
+
+
+class ValidationProblem(ProblemException):
+
+    def __init__(self, title='Validation Error', status=422, detail=None):
+        super(BadRequestProblem, self).__init__(status=status, title=title, detail=detail)
 
 
 class UnsupportedMediaTypeProblem(ProblemException):
