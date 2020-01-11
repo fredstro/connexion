@@ -94,7 +94,7 @@ class BadRequestProblem(ProblemException):
 class ValidationProblem(ProblemException):
 
     def __init__(self, title='Validation Error', status=422, detail=None):
-        super(BadRequestProblem, self).__init__(status=status, title=title, detail=detail)
+        super(ValidationProblem, self).__init__(status=status, title=title, detail=detail)
 
 
 class UnsupportedMediaTypeProblem(ProblemException):

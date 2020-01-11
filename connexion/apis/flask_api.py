@@ -143,12 +143,17 @@ class FlaskApi(AbstractAPI):
     @classmethod
     def _framework_to_connexion_response(cls, response, mimetype):
         """ Cast framework response class to ConnexionResponse used for schema validation """
+        # Add support for direct passthgouh of files.
+        if not response.direct_passthrough:
+            data = response.get_data()
+        else:
+            data = response.response
         return ConnexionResponse(
             status_code=response.status_code,
             mimetype=response.mimetype,
             content_type=response.content_type,
             headers=response.headers,
-            body=response.get_data(),
+            body=data,
         )
 
     @classmethod
