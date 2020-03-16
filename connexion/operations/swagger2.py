@@ -268,7 +268,7 @@ class Swagger2Operation(AbstractOperation):
                 try:
                     form_defn = form_defns[key]
                 except KeyError:  # pragma: no cover
-                    logger.error("Function argument '{}' not defined in specification".format(key))
+                    logger.error("Function argument '{0:10.10}...' not defined in specification".format(key))
                 else:
                     kwargs[key] = self._get_val_from_param(value, form_defn)
         return kwargs
